@@ -297,6 +297,64 @@ public partial class FormService : IFormService
             MapToDisplayPayload(form, step, null, null)
         );
     }
+    public async Task<ServiceResult<FormMetaContract>> GetFormMetaByIdAsync(Guid id, Guid? userId, CancellationToken cancellationToken = default)
+    {
+        var form = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+
+        if (form == null || form.Status == FormStatus.Deleted || form.Status == FormStatus.Closed)
+            return new ServiceResult<FormMetaContract>(ServiceStatus.NotFound);
+
+        if (userId == null && (!form.AllowAnonymousResponses || form.LinkedFormId.HasValue))
+        {
+            return new ServiceResult<FormMetaContract>(
+                ServiceStatus.Unauthorized,
+                Message: "Bu formu görüntülemek için giriş yapmalısınız."
+            );
+        }
+
+        var parentForm = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.LinkedFormId == id, cancellationToken);
+
+        if (parentForm != null)
+        {
+            if (userId == null)
+            {
+                return new ServiceResult<FormMetaContract>(
+                    ServiceStatus.Unauthorized,
+                    Message: "Bağlı form akışı için giriş yapmalısınız."
+                );
+            }
+
+            if (parentForm.RequiresManualReview)
+            {
+                var parentResponse = await _context.Responses
+                    .Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived)
+                    .OrderByDescending(r => r.SubmittedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (parentResponse == null || parentResponse.Status != FormResponseStatus.Approved)
+                {
+                    return new ServiceResult<FormMetaContract>(
+                        ServiceStatus.RequiresParentApproval,
+                        Message: "Bu formu görüntülemek için önceki adımın onaylanması gerekmektedir."
+                    );
+                }
+            }
+            else
+            {
+                var parentResponse = await _context.Responses
+                    .Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived)
+                    .AnyAsync(cancellationToken);
+
+                if (!parentResponse)
+                    return await GetFormMetaByIdAsync(parentForm.Id, userId, cancellationToken);
+            }
+        }
+
+        return new ServiceResult<FormMetaContract>(
+            ServiceStatus.Success,
+            Data: new FormMetaContract(form.Title, form.Description)
+        );
+    }
     public async Task<ServiceResult<FormInfoContract>> GetFormInfoByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
         var form = await _context.Forms.AsNoTracking().Include(f => f.Collaborators).FirstOrDefaultAsync(f => f.Id == id, cancellationToken);

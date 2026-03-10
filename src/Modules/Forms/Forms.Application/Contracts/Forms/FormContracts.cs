@@ -50,3 +50,8 @@ public record LinkableFormsContract(
     Guid Id,
     string Title
 );
+
+public record FormMetaContract(
+    string Title,
+    string? Description
+);
