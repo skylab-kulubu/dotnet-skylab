@@ -1,7 +1,6 @@
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Domain.Enums;
-using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.Metrics;
 using Skylab.Forms.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +53,8 @@ public class FormMetricService : IFormMetricService
                 ApprovedCount: 0,
                 RejectedCount: 0,
                 AverageCompletionTime: null,
+                DailyTrendPercentage: 0,
+                HourlyTrendPercentage: 0,
                 SourceBreakdown: new SourceBreakdownContract(0, 0),
                 DailyTrend: emptyDailyTrend,
                 HourlyTrend: new List<TrendItemContract>()
@@ -75,8 +76,12 @@ public class FormMetricService : IFormMetricService
         }).ToList();
 
         var hourlyData = await query.GroupBy(r => r.SubmittedAt.Hour).Select(g => new { Hour = g.Key, Count = g.Count() }).ToListAsync(cancellationToken);
-
-        var hourlyTrend = hourlyData.Select(h => new TrendItemContract($"h-{h.Hour}", h.Hour.ToString("00"), h.Count)).ToList();
+        var currentHour = DateTime.UtcNow.Hour;
+        var hourlyTrend = Enumerable.Range(0, 24).Select(offset => {
+            var targetHour = (currentHour + 1 + offset) % 24;
+            var data = hourlyData.FirstOrDefault(d => d.Hour == targetHour);
+            return new TrendItemContract($"h-{targetHour}", targetHour.ToString("00"), data?.Count ?? 0);
+        }).ToList();
 
         var result = new FormMetricsContract(
             basicStats.Total,
@@ -84,11 +89,68 @@ public class FormMetricService : IFormMetricService
             basicStats.Approved,
             basicStats.Rejected,
             basicStats.AvgTime,
+            CalculateTrendPercentageChange(dailyTrend),
+            CalculateTrendPercentageChange(hourlyTrend),
             new SourceBreakdownContract(basicStats.Registered, basicStats.Anonymous),
             dailyTrend,
             hourlyTrend
         );
 
         return new ServiceResult<FormMetricsContract>(ServiceStatus.Success, Data: result);
+    }
+
+    public async Task<ServiceResult<ServiceMetricsContract>> GetServiceMetricsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var totalForms = await _context.Forms.CountAsync(cancellationToken);
+        var totalResponses = await _context.Responses.CountAsync(cancellationToken);
+        var pendingResponses = await _context.Responses.CountAsync(r => r.Status == FormResponseStatus.Pending && !r.IsArchived, cancellationToken);
+
+        var today = DateTime.UtcNow.Date;
+        var diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
+        var currentWeekStart = today.AddDays(-1 * diff).Date;
+
+        var weeksToFetch = 8;
+        var startDate = currentWeekStart.AddDays(-(weeksToFetch - 1) * 7);
+
+        var formDates = await _context.Forms.AsNoTracking().Where(f => f.CreatedAt >= startDate).Select(f => f.CreatedAt).ToListAsync(cancellationToken);
+        var responseDates = await _context.Responses.AsNoTracking().Where(r => r.SubmittedAt >= startDate).Select(r => r.SubmittedAt).ToListAsync(cancellationToken);
+
+        var formsWeeklyTrend = new List<TrendItemContract>();
+        var responsesWeeklyTrend = new List<TrendItemContract>();
+
+        for (int i = weeksToFetch - 1; i >= 0; i--)
+        {
+            var weekStart = currentWeekStart.AddDays(-i * 7);
+            var weekEnd = weekStart.AddDays(7);
+
+            var weekLabel = $"{weekStart:dd MMM}";
+
+            var formCount = formDates.Count(d => d >= weekStart && d < weekEnd);
+            var responseCount = responseDates.Count(d => d >= weekStart && d < weekEnd);
+
+            formsWeeklyTrend.Add(new TrendItemContract($"fw-{i}", weekLabel, formCount));
+            responsesWeeklyTrend.Add(new TrendItemContract($"rw-{i}", weekLabel, responseCount));
+        }
+
+        var result = new ServiceMetricsContract(totalForms, totalResponses, pendingResponses, CalculateTrendPercentageChange(formsWeeklyTrend), CalculateTrendPercentageChange(responsesWeeklyTrend), formsWeeklyTrend, responsesWeeklyTrend);
+
+        return new ServiceResult<ServiceMetricsContract>(ServiceStatus.Success, Data: result);
+    }
+
+    private double CalculateTrendPercentageChange(List<TrendItemContract> trend)
+    {
+        if (trend == null || trend.Count < 2) return 0;
+
+        var previousItems = trend.Take(trend.Count - 1).Select(t => t.Count).ToList();
+        var previousAverage = previousItems.Average();
+
+        var currentCount = trend.Last().Count;
+
+        if (previousAverage == 0)
+            return currentCount > 0 ? 100.0 : 0.0;
+
+        var percentageChange = ((currentCount - previousAverage) / previousAverage) * 100;
+
+        return Math.Round(percentageChange, 2);
     }
 }

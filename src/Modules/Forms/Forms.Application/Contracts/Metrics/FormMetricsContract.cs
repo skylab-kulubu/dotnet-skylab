@@ -6,9 +6,21 @@ public record FormMetricsContract(
     int ApprovedCount,
     int RejectedCount,
     double? AverageCompletionTime,
+    double DailyTrendPercentage,
+    double HourlyTrendPercentage,
     SourceBreakdownContract SourceBreakdown,
     List<TrendItemContract> DailyTrend,
     List<TrendItemContract> HourlyTrend
+);
+
+public record ServiceMetricsContract(
+    int TotalForms,
+    int TotalResponsesReceived,
+    int PendingResponsesCount,
+    double FormsWeeklyTrendPercentage,
+    double ResponsesWeeklyTrendPercentage,
+    List<TrendItemContract> FormsCreatedWeeklyTrend,
+    List<TrendItemContract> ResponsesWeeklyTrend
 );
 
 public record SourceBreakdownContract(int Registered, int Anonymous);
