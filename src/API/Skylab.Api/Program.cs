@@ -1,14 +1,18 @@
 using Skylab.Forms.Infrastructure.Storage;
 using Skylab.Forms.Application.Services;
 using Skylab.Exports.Application.Services;
+using Skylab.Shared.Infrastructure.Caching;
 using Skylab.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
 using Steeltoe.Discovery.Eureka;
 using Steeltoe.Discovery.HttpClients;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var allowedOrigin = Environment.GetEnvironmentVariable("ALLOWED_ORIGIN") ?? "http://localhost:3000";
+
+var redisConnection = Environment.GetEnvironmentVariable("Redis__ConnectionString") ?? "localhost:6379";
 
 builder.Services.AddCors(options =>
 {
@@ -35,12 +39,16 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnection));
+
 builder.Services.AddScoped<IFormService, FormService>();
 builder.Services.AddScoped<IFormResponseService, FormResponseService>();
 builder.Services.AddScoped<IFormMetricService, FormMetricService>();
 builder.Services.AddScoped<IComponentGroupService, ComponentGroupService>();
 
 builder.Services.AddScoped<IExcelService, ExcelService>();
+
+builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
 builder.Services.AddHttpClient<ICurrentUserService, RemoteCurrentUserService>(client => { client.BaseAddress = new Uri("http://super-skylab"); }).AddServiceDiscovery();
 builder.Services.AddHttpClient<IExternalUserService, ExternalUserService>(client => { client.BaseAddress = new Uri("http://super-skylab"); }).AddServiceDiscovery();
