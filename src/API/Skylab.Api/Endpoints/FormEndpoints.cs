@@ -3,6 +3,7 @@ using Skylab.Api.Extensions;
 using Skylab.Shared.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Skylab.Forms.Application.Contracts.Responses;
+using Skylab.Forms.Application.Contracts.Draft;
 
 namespace Skylab.Api.Endpoints;
 
@@ -36,7 +37,34 @@ public static class FormEndpoints
             if (result.Status == ServiceStatus.Success)
                 return Results.Created($"/api/forms/responses/{result.Data}", result);
 
-             return result.ToApiResult();
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/responses/draft", async ([FromBody] ResponseDraftRequest request, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            var result = await draftService.SaveResponseDraftAsync(request.FormId, userId.Value, request, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapGet("/responses/draft/{formId:guid}", async (Guid formId, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            var result = await draftService.GetResponseDraftAsync(formId, userId.Value, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapDelete("/responses/draft/{formId:guid}", async (Guid formId, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            var result = await draftService.DeleteResponseDraftAsync(formId, userId.Value, ct);
+            return result.Status == ServiceStatus.Success ? Results.NoContent() : result.ToApiResult();
         });
     }
 }

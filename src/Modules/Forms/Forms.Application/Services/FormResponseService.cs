@@ -18,12 +18,14 @@ public class FormResponseService : IFormResponseService
     private readonly FormsDbContext _context;
     private readonly IExternalUserService _userService;
     private readonly IExcelService _excelService;
+    private readonly IFormDraftService _draftService;
 
-    public FormResponseService(FormsDbContext context, IExternalUserService userService, IExcelService excelService)
+    public FormResponseService(FormsDbContext context, IExternalUserService userService, IExcelService excelService, IFormDraftService draftService)
     {
         _context = context;
         _userService = userService;
         _excelService = excelService;
+        _draftService = draftService;
     }
 
     public async Task<ServiceResult<Guid>> SubmitResponseAsync(ResponseSubmitRequest contract, Guid? userId, CancellationToken cancellationToken = default)
@@ -56,6 +58,11 @@ public class FormResponseService : IFormResponseService
 
         _context.Responses.Add(response);
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (userId.HasValue)
+        {
+            await _draftService.DeleteResponseDraftAsync(form.Id, userId.Value, cancellationToken);
+        }
 
         return new ServiceResult<Guid>(form.RequiresManualReview ? ServiceStatus.PendingApproval : ServiceStatus.Success, Data: response.Id, Message: "Yanıt kaydedildi.");
     }
@@ -246,11 +253,11 @@ public class FormResponseService : IFormResponseService
             response.ReviewedBy = archiverId;
             response.ReviewedAt = DateTime.UtcNow;
         }
-        
+
         response.IsArchived = true;
         response.ArchivedBy = archiverId;
         response.ArchivedAt = DateTime.UtcNow;
-        
+
         await _context.SaveChangesAsync(cancellationToken);
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt başarıyla arşivlendi.");
     }
@@ -264,7 +271,7 @@ public class FormResponseService : IFormResponseService
         var isAuthorized = form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
         if (!isAuthorized)
             return new ServiceResult<byte[]>(ServiceStatus.NotAuthorized, Message: "Bu formun yanıtlarını dışa aktarma yetkiniz yok.");
-        
+
         var headers = new List<string>
         {
             "Yanıt ID",
@@ -278,7 +285,8 @@ public class FormResponseService : IFormResponseService
         {
             string questionText = schemaItem.Props.TryGetValue("question", out var qVal) ? qVal?.ToString() ?? "İsimsiz Soru" : "Soru";
             headers.Add(questionText);
-        };
+        }
+        ;
 
         var rows = new List<List<string>>();
 

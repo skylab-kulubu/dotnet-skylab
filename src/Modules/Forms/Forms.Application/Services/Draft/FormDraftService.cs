@@ -38,7 +38,10 @@ public class FormDraftService : IFormDraftService
     {
         var key = $"forms:draft:response:{formId}:{userId}";
         
-        var draft = await _cache.GetAsync<ResponseDraftRequest>(key, ct);
+        var draft = await _cache.GetAsync<ResponseDraftRequest>(key, ResponseDraftTtl, ct);
+
+        if (draft == null)
+            return new ServiceResult<ResponseDraftRequest?>(ServiceStatus.NotFound, Message: "Yanıt taslağı bulunamadı.");
 
         return new ServiceResult<ResponseDraftRequest?>(ServiceStatus.Success, Data: draft);
     }
@@ -61,8 +64,8 @@ public class FormDraftService : IFormDraftService
 
     public async Task<ServiceResult<bool>> SaveFormDraftAsync(Guid formId, Guid userId, FormDraftRequest draft, CancellationToken ct = default)
     {
-        var key = $"forms:draft:{formId}:{userId}";
- 
+        var key = $"forms:draft:form:{formId}:{userId}";
+
         await _cache.SetAsync(key, draft, FormDraftTtl, ct);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true);
@@ -70,16 +73,19 @@ public class FormDraftService : IFormDraftService
 
     public async Task<ServiceResult<FormDraftContract?>> GetFormDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
     {
-        var key = $"forms:draft:{formId}:{userId}";
+        var key = $"forms:draft:form:{formId}:{userId}";
         
-        var draftRequest = await _cache.GetAsync<FormDraftRequest>(key, ct);
+        var draftRequest = await _cache.GetAsync<FormDraftRequest>(key, FormDraftTtl, ct);
 
-        return new ServiceResult<FormDraftContract?>(ServiceStatus.Success, Data: draftRequest?.Data);
+        if (draftRequest == null)
+            return new ServiceResult<FormDraftContract?>(ServiceStatus.NotFound, Message: "Form taslağı bulunamadı.");
+
+        return new ServiceResult<FormDraftContract?>(ServiceStatus.Success, Data: draftRequest.Data);
     }
 
     public async Task<ServiceResult<bool>> DeleteFormDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
     {
-        var key = $"forms:draft:{formId}:{userId}";
+        var key = $"forms:draft:form:{formId}:{userId}";
         
         await _cache.RemoveAsync(key, ct);
 
@@ -87,7 +93,7 @@ public class FormDraftService : IFormDraftService
     }
     public async Task<ServiceResult<bool>> ClearFormDraftsAsync(Guid formId, CancellationToken ct = default)
     {
-        var prefix = $"forms:draft:{formId}:";
+        var prefix = $"forms:draft:form:{formId}:";
         
         await _cache.RemoveByPrefixAsync(prefix, ct);
 

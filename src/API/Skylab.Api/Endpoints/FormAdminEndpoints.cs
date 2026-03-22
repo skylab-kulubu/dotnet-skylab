@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Skylab.Forms.Application.Contracts.Forms;
 using Skylab.Forms.Application.Contracts.Responses;
 using Skylab.Forms.Application.Contracts.ComponentGroup;
+using Skylab.Forms.Application.Contracts.Draft;
 
 namespace Skylab.Api.Endpoints;
 
@@ -80,8 +81,36 @@ public static class FormAdminEndpoints
             if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Form güncellemek için giriş yapmalısınız.");
 
             var result = await service.UpdateFormAsync(id, request, userId.Value, ct);
-
             return result.ToApiResult();
+        });
+
+        group.MapGet("/{id:guid}/draft", async (Guid id, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            var result = await draftService.GetFormDraftAsync(id, userId.Value, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/{id:guid}/draft", async (Guid id, [FromBody] FormDraftRequest request, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            if (id != request.FormId) return ServiceStatus.NotAcceptable.ToApiResult("Rota ID'si ile taslak ID'si uyuşmuyor.");
+
+            var result = await draftService.SaveFormDraftAsync(id, userId.Value, request, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapDelete("/{id:guid}/draft", async (Guid id, IFormDraftService draftService, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult();
+
+            var result = await draftService.DeleteFormDraftAsync(id, userId.Value, ct);
+            return result.Status == ServiceStatus.Success ? Results.NoContent() : result.ToApiResult();
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, IFormService service, ICurrentUserService userService, CancellationToken ct) =>

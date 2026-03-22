@@ -44,6 +44,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Conn
 builder.Services.AddScoped<IFormService, FormService>();
 builder.Services.AddScoped<IFormResponseService, FormResponseService>();
 builder.Services.AddScoped<IFormMetricService, FormMetricService>();
+builder.Services.AddScoped<IFormDraftService, FormDraftService>();
 builder.Services.AddScoped<IComponentGroupService, ComponentGroupService>();
 
 builder.Services.AddScoped<IExcelService, ExcelService>();

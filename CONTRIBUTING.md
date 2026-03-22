@@ -51,13 +51,14 @@ src/
 ├── Modules/
 │   ├── Forms/                             # Form management module
 │   │   ├── Forms.Domain/                  #   Entities, enums, domain models
-│   │   ├── Forms.Application/             #   Services, DTOs, business logic
-│   │   └── Forms.Infrastructure/          #   DbContext, entity configs, migrations
+│   │   ├── Forms.Infrastructure/          #   DbContext, entity configs, migrations
+│   │   └── Forms.Application/             #   Services, DTOs, business logic
 │   └── Exports/                           # Excel export module
 │       └── Exports.Application/           #   Excel file generation service
 └── Shared/                                # Shared libraries across modules
     ├── Skylab.Shared.Domain/              #   Common domain types
-    └── Skylab.Shared.Application/         #   Common service interfaces, result pattern
+    ├── Skylab.Shared.Application/         #   Common service interfaces, result pattern
+    └── Skylab.Shared.Infrastructure/      #   Common infrastructure (caching, etc.)
 ```
 
 ---
@@ -68,12 +69,12 @@ src/
 
 | Layer | Responsibility | Dependencies |
 |-------|---------------|-------------|
-| **Domain** | Entities, enums, domain rules | None (pure C#) |
-| **Application** | Service interfaces/implementations, DTOs, business logic | Domain, Shared |
-| **Infrastructure** | DbContext, entity configurations, migrations | Domain, Application |
-| **API** | Endpoint definitions, DI configuration | All layers |
+| **Domain** | Entities, enums, domain rules | Shared.Domain |
+| **Infrastructure** | DbContext, entity configurations, migrations | Domain |
+| **Application** | Service interfaces/implementations, DTOs, business logic | Domain, Infrastructure, Shared |
+| **API** | Endpoint definitions, DI configuration | Application, Infrastructure |
 
-> **Rule:** The dependency flow is always inward: API → Infrastructure → Application → Domain. The Domain layer must never depend on anything.
+> **Note:** The dependency flow is: API → Application → Infrastructure → Domain. The Application layer directly uses DbContext and cache services from the Infrastructure layer for simplicity. This is a pragmatic trade-off — not strict Clean Architecture, but keeps the codebase lean by avoiding unnecessary repository abstractions.
 
 ### Existing Modules
 
@@ -86,7 +87,7 @@ src/
 
 ### Key Patterns
 
-- **Clean Architecture** with DDD principles per module
+- **Layered Architecture** with pragmatic DDD principles per module
 - **Repository Pattern** via EF Core DbContext
 - **Result Pattern** - all service methods return `ServiceResult<T>`
 - **Minimal APIs** with `MapGroup` for endpoint organization
@@ -129,21 +130,22 @@ dotnet sln src/Skylab.sln add \
 Establish the dependency chain:
 
 ```bash
-# Application → Domain
-dotnet add src/Modules/Notifications/Notifications.Application reference \
+# Infrastructure → Domain
+dotnet add src/Modules/Notifications/Notifications.Infrastructure reference \
   src/Modules/Notifications/Notifications.Domain
 
-# Application → Shared.Domain & Shared.Application
+# Application → Domain & Infrastructure
+dotnet add src/Modules/Notifications/Notifications.Application reference \
+  src/Modules/Notifications/Notifications.Domain \
+  src/Modules/Notifications/Notifications.Infrastructure
+
+# Application → Shared
 dotnet add src/Modules/Notifications/Notifications.Application reference \
   src/Shared/Skylab.Shared.Domain \
-  src/Shared/Skylab.Shared.Application
+  src/Shared/Skylab.Shared.Application \
+  src/Shared/Skylab.Shared.Infrastructure
 
-# Infrastructure → Domain & Application
-dotnet add src/Modules/Notifications/Notifications.Infrastructure reference \
-  src/Modules/Notifications/Notifications.Domain \
-  src/Modules/Notifications/Notifications.Application
-
-# API → All layers
+# API → Application & Infrastructure
 dotnet add src/API/Skylab.Api reference \
   src/Modules/Notifications/Notifications.Application \
   src/Modules/Notifications/Notifications.Infrastructure

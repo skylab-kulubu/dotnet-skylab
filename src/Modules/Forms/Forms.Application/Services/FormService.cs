@@ -9,6 +9,7 @@ using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.Auth;
 using Skylab.Forms.Application.Contracts.Forms;
 using Skylab.Forms.Application.Contracts.Collaborators;
+using System.Text.Json;
 
 namespace Skylab.Forms.Application.Services;
 
@@ -16,11 +17,13 @@ public partial class FormService : IFormService
 {
     private readonly FormsDbContext _context;
     private readonly IExternalUserService _userService;
+    private readonly IFormDraftService _draftService;
 
-    public FormService(FormsDbContext context, IExternalUserService userService)
+    public FormService(FormsDbContext context, IExternalUserService userService, IFormDraftService draftService)
     {
         _context = context;
         _userService = userService;
+        _draftService = draftService;
     }
     public async Task<ServiceResult<FormContract>> CreateFormAsync(FormUpsertRequest contract, Guid userId, CancellationToken cancellationToken = default)
     {
@@ -105,6 +108,13 @@ public partial class FormService : IFormService
                 if (validation.Status != ServiceStatus.Success)
                     return new ServiceResult<FormContract>(validation.Status, Message: validation.Message);
 
+                bool statusChanged = existingForm.Status != contract.Status;
+                
+                var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+                string existingSchemaJson = JsonSerializer.Serialize(existingForm.Schema, jsonOptions);
+                string newSchemaJson = JsonSerializer.Serialize(contract.Schema ?? new(), jsonOptions);
+                bool schemaChanged = existingSchemaJson != newSchemaJson;
+
                 var isChildForm = await _context.Forms.AnyAsync(parent => parent.LinkedFormId == formId, cancellationToken);
 
                 existingForm.Title = contract.Title;
@@ -158,6 +168,13 @@ public partial class FormService : IFormService
                 await _context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
 
+                await _draftService.ClearFormDraftsAsync(formId, cancellationToken);
+
+                if (statusChanged || schemaChanged)
+                {
+                    await _draftService.ClearResponseDraftsAsync(formId, cancellationToken);
+                }
+
                 var collaboratorIds = existingForm.Collaborators.Select(c => c.UserId).ToList();
                 var users = await _userService.GetUsersAsync(collaboratorIds, cancellationToken);
 
@@ -177,7 +194,6 @@ public partial class FormService : IFormService
         if (form == null) return new ServiceResult<FormContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
         var collaborator = form.Collaborators.FirstOrDefault(c => c.UserId == userId && (c.Role == CollaboratorRole.Owner || c.Role == CollaboratorRole.Editor));
-
         if (collaborator == null) return new ServiceResult<FormContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
 
         var collaboratorIds = form.Collaborators.Where(c => c.Role != CollaboratorRole.None).Select(c => c.UserId).ToList();
@@ -491,6 +507,10 @@ public partial class FormService : IFormService
         form.Status = FormStatus.Deleted;
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        await _draftService.ClearFormDraftsAsync(id, cancellationToken);
+        await _draftService.ClearResponseDraftsAsync(id, cancellationToken);
+
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Form silindi.");
     }
     private static FormContract MapToContract(Form form, List<UserContract> users, bool isChildForm = false, CollaboratorRole userRole = CollaboratorRole.None, string? linkedFormTitle = null)

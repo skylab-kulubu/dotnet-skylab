@@ -14,10 +14,14 @@ public class RedisCacheService : ICacheService
         _db = redis.GetDatabase();
     }
 
-    public async Task<T?> GetAsync<T>(string key, CancellationToken ct)
+    public async Task<T?> GetAsync<T>(string key, TimeSpan? slidingExpiration = null, CancellationToken ct = default)
     {
         var value = await _db.StringGetAsync(key);
         if (value.IsNullOrEmpty) return default;
+        if (slidingExpiration.HasValue)
+        {
+            await _db.KeyExpireAsync(key, slidingExpiration.Value);
+        }
         return JsonSerializer.Deserialize<T>(value!);
     }
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiry, CancellationToken ct)
