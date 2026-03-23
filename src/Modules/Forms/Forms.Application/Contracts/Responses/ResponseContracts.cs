@@ -24,7 +24,8 @@ public record ResponseContract(
 
 public record ResponseSubmitResult(
     Guid ResponseId,
-    Guid? LinkedFormId
+    Guid? LinkedFormId,
+    int Step
 );
 
 public record ResponseSummaryContract(

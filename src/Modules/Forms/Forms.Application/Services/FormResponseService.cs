@@ -64,8 +64,41 @@ public class FormResponseService : IFormResponseService
             await _draftService.DeleteResponseDraftAsync(form.Id, userId.Value, cancellationToken);
         }
 
-        var result = new ResponseSubmitResult(response.Id, form.LinkedFormId);
-        return new ServiceResult<ResponseSubmitResult>(form.RequiresManualReview ? ServiceStatus.PendingApproval : ServiceStatus.Success, Data: result, Message: "Yanıt kaydedildi.");
+        bool isChild = parentForm != null;
+        bool isLinkedFlow = form.LinkedFormId.HasValue || isChild;
+        int step = 0;
+        string message;
+        ServiceStatus status;
+
+        if (isLinkedFlow)
+        {
+            if (form.RequiresManualReview)
+            {
+                step = isChild ? 4 : 2;
+                status = ServiceStatus.PendingApproval;
+                message = "Yanıtınız incelemeye alındı.";
+            }
+            else if (!isChild && form.LinkedFormId.HasValue)
+            {
+                step = 3;
+                status = ServiceStatus.Success;
+                message = "Yanıt kaydedildi, bir sonraki adıma geçebilirsiniz.";
+            }
+            else
+            {
+                step = 5;
+                status = ServiceStatus.Completed;
+                message = "Tüm adımları tamamladınız.";
+            }
+        }
+        else
+        {
+            status = form.RequiresManualReview ? ServiceStatus.PendingApproval : ServiceStatus.Success;
+            message = form.RequiresManualReview ? "Yanıtınız incelemeye alındı." : "Yanıt kaydedildi.";
+        }
+
+        var result = new ResponseSubmitResult(response.Id, form.LinkedFormId, step);
+        return new ServiceResult<ResponseSubmitResult>(status, Data: result, Message: message);
     }
     public async Task<ServiceResult<FormResponsesListResult>> GetFormResponsesAsync(Guid formId, Guid userId, GetResponsesRequest request, CancellationToken cancellationToken = default)
     {

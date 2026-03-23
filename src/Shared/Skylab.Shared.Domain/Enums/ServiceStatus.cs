@@ -14,5 +14,6 @@ public enum ServiceStatus
     PendingApproval = 600,
     Approved = 601,
     Declined = 602,
-    RequiresParentApproval = 603
+    RequiresParentApproval = 603,
+    Completed = 604
 }

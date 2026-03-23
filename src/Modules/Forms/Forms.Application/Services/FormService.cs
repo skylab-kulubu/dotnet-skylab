@@ -226,10 +226,9 @@ public partial class FormService : IFormService
         {
             if (userId == null)
             {
-                var lockedStep = ResolveStep(isParent, isChild, isCompleted: false);
                 return new ServiceResult<FormDisplayPayload>(
                     ServiceStatus.Unauthorized,
-                    new FormDisplayPayload(null, lockedStep, null, null),
+                    new FormDisplayPayload(null, 1, null, null),
                     "Bağlı form akışı için giriş yapmalısınız."
                 );
             }
@@ -239,11 +238,9 @@ public partial class FormService : IFormService
             {
                 if (parentResponse == null || parentResponse.Status != FormResponseStatus.Approved)
                 {
-                    var lockedStep = ResolveStep(isParent, isChild, isCompleted: false);
-
                     return new ServiceResult<FormDisplayPayload>(
                         ServiceStatus.RequiresParentApproval,
-                        new FormDisplayPayload(null, lockedStep, null, null),
+                        new FormDisplayPayload(null, 2, null, null),
                         "Bu formu görüntülemek için önceki adımın onaylanması gerekmektedir."
                     );
                 }
@@ -254,10 +251,10 @@ public partial class FormService : IFormService
             }
         }
 
+        bool isLinkedFlow = isParent || isChild;
         var latestResponse = await _context.Responses.Where(r => r.FormId == id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
 
-        bool isCompleted = latestResponse?.Status == FormResponseStatus.Approved || latestResponse?.Status == FormResponseStatus.NonRestrict;
-        int step = ResolveStep(isParent, isChild, isCompleted);
+        int step = isLinkedFlow ? ResolveStep(isChild, latestResponse?.Status) : 0;
 
         if (latestResponse != null)
         {
@@ -274,13 +271,45 @@ public partial class FormService : IFormService
             }
             if (latestResponse.Status == FormResponseStatus.Approved || latestResponse.Status == FormResponseStatus.NonRestrict)
             {
-                if (form.LinkedFormId.HasValue) return await GetDisplayFormByIdAsync(form.LinkedFormId.Value, userId, cancellationToken);
+                if (form.LinkedFormId.HasValue)
+                {
+                    if (form.AllowMultipleResponses)
+                    {
+                        var childResponse = await _context.Responses
+                            .Where(r => r.FormId == form.LinkedFormId.Value && r.UserId == userId && !r.IsArchived)
+                            .OrderByDescending(r => r.SubmittedAt)
+                            .FirstOrDefaultAsync(cancellationToken);
+
+                        bool childCompleted = childResponse != null &&
+                            (childResponse.Status == FormResponseStatus.Approved || childResponse.Status == FormResponseStatus.NonRestrict);
+
+                        if (!childCompleted)
+                            return await GetDisplayFormByIdAsync(form.LinkedFormId.Value, userId, cancellationToken);
+
+                        return new ServiceResult<FormDisplayPayload>(
+                            ServiceStatus.Success,
+                            MapToDisplayPayload(form, 1, null, null)
+                        );
+                    }
+
+                    return await GetDisplayFormByIdAsync(form.LinkedFormId.Value, userId, cancellationToken);
+                }
+
+                if (isChild)
+                {
+                    return new ServiceResult<FormDisplayPayload>(
+                        ServiceStatus.Completed,
+                        new FormDisplayPayload(null, step, note, date),
+                        "Tüm adımları tamamladınız."
+                    );
+                }
+
                 if (!form.AllowMultipleResponses)
                 {
                     return new ServiceResult<FormDisplayPayload>(
-                        ServiceStatus.Approved,
+                        latestResponse.Status == FormResponseStatus.Approved ? ServiceStatus.Approved : ServiceStatus.Success,
                         new FormDisplayPayload(null, step, note, date),
-                        "Başvurunuz onaylanmıştır."
+                        latestResponse.Status == FormResponseStatus.Approved ? "Başvurunuz onaylanmıştır." : "Bu formu daha önce doldurdunuz."
                     );
                 }
             }
@@ -292,17 +321,6 @@ public partial class FormService : IFormService
                         ServiceStatus.Declined,
                         new FormDisplayPayload(null, step, note, date),
                         "Başvurunuz reddedilmiştir."
-                    );
-                }
-            }
-            if (latestResponse.Status == FormResponseStatus.NonRestrict)
-            {
-                if (!form.AllowMultipleResponses)
-                {
-                    return new ServiceResult<FormDisplayPayload>(
-                        ServiceStatus.Success,
-                        new FormDisplayPayload(null, step, null, null),
-                        "Bu formu daha önce doldurdunuz."
                     );
                 }
             }
@@ -563,18 +581,25 @@ public partial class FormService : IFormService
 
         return new FormDisplayPayload(contract, step, reviewNote, reviewedAt);
     }
-    private static int ResolveStep(bool isParent, bool isChild, bool isCompleted)
+    private static int ResolveStep(bool isChild, FormResponseStatus? responseStatus)
     {
-        switch (isParent, isChild, isCompleted)
+        if (!isChild) // parent form
         {
-            case (true, false, false):
-                return 1;
-            case (false, true, false):
-                return 2;
-            case (false, true, true):
-                return 3;
-            default:
-                return 0;
+            return responseStatus switch
+            {
+                null or FormResponseStatus.Declined => 1,
+                FormResponseStatus.Pending => 2,
+                _ => 3
+            };
+        }
+        else // child form
+        {
+            return responseStatus switch
+            {
+                null or FormResponseStatus.Declined => 3,
+                FormResponseStatus.Pending => 4,
+                _ => 5
+            };
         }
     }
 }

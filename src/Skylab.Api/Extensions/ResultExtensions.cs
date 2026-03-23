@@ -14,6 +14,7 @@ public static class ResultExtensions
             ServiceStatus.Approved => Results.Ok(result),
             ServiceStatus.Declined => Results.Ok(result),
             ServiceStatus.PendingApproval => Results.Ok(result),
+            ServiceStatus.Completed => Results.Ok(result),
 
             ServiceStatus.NotFound => Results.NotFound(new
             {
