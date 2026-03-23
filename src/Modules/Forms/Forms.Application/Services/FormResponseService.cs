@@ -28,18 +28,18 @@ public class FormResponseService : IFormResponseService
         _draftService = draftService;
     }
 
-    public async Task<ServiceResult<Guid>> SubmitResponseAsync(ResponseSubmitRequest contract, Guid? userId, CancellationToken cancellationToken = default)
+    public async Task<ServiceResult<ResponseSubmitResult>> SubmitResponseAsync(ResponseSubmitRequest contract, Guid? userId, CancellationToken cancellationToken = default)
     {
         var form = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == contract.FormId, cancellationToken);
-        if (form == null) return new ServiceResult<Guid>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
-        if (form.Status != FormStatus.Open) return new ServiceResult<Guid>(ServiceStatus.NotAcceptable, Message: "Form kapalı.");
+        if (form == null) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
+        if (form.Status != FormStatus.Open) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Form kapalı.");
 
-        if (!form.AllowAnonymousResponses && userId == null) return new ServiceResult<Guid>(ServiceStatus.Unauthorized, Message: "Bu formu doldurmak için giriş yapmalısınız.");
+        if (!form.AllowAnonymousResponses && userId == null) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.Unauthorized, Message: "Bu formu doldurmak için giriş yapmalısınız.");
 
         if (userId.HasValue && !form.AllowMultipleResponses)
         {
             var hasExistingResponse = await _context.Responses.AnyAsync(r => r.FormId == form.Id && r.UserId == userId && !r.IsArchived, cancellationToken);
-            if (hasExistingResponse) return new ServiceResult<Guid>(ServiceStatus.NotAcceptable, Message: "Bu formu daha önce doldurdunuz.");
+            if (hasExistingResponse) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Bu formu daha önce doldurdunuz.");
         }
 
         var parentForm = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.LinkedFormId == form.Id, cancellationToken);
@@ -49,10 +49,10 @@ public class FormResponseService : IFormResponseService
             var parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
 
             if (parentResponse == null)
-                return new ServiceResult<Guid>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamayı doldurmanız gerekmektedir.");
+                return new ServiceResult<ResponseSubmitResult>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamayı doldurmanız gerekmektedir.");
 
             if (parentForm.RequiresManualReview && parentResponse.Status != FormResponseStatus.Approved)
-                return new ServiceResult<Guid>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamanın onaylanması gerekmektedir.");
+                return new ServiceResult<ResponseSubmitResult>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamanın onaylanması gerekmektedir.");
         }
         var response = MapToEntity(form, contract.Responses, contract.TimeSpent, userId);
 
@@ -64,7 +64,8 @@ public class FormResponseService : IFormResponseService
             await _draftService.DeleteResponseDraftAsync(form.Id, userId.Value, cancellationToken);
         }
 
-        return new ServiceResult<Guid>(form.RequiresManualReview ? ServiceStatus.PendingApproval : ServiceStatus.Success, Data: response.Id, Message: "Yanıt kaydedildi.");
+        var result = new ResponseSubmitResult(response.Id, form.LinkedFormId);
+        return new ServiceResult<ResponseSubmitResult>(form.RequiresManualReview ? ServiceStatus.PendingApproval : ServiceStatus.Success, Data: result, Message: "Yanıt kaydedildi.");
     }
     public async Task<ServiceResult<FormResponsesListResult>> GetFormResponsesAsync(Guid formId, Guid userId, GetResponsesRequest request, CancellationToken cancellationToken = default)
     {

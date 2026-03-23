@@ -34,8 +34,8 @@ public static class FormEndpoints
             var userId = await userService.GetUserIdAsync(ct);
             var result = await service.SubmitResponseAsync(request, userId, ct);
 
-            if (result.Status == ServiceStatus.Success)
-                return Results.Created($"/api/forms/responses/{result.Data}", result);
+            if (result.Status == ServiceStatus.Success || result.Status == ServiceStatus.PendingApproval)
+                return Results.Created($"/api/forms/responses/{result.Data?.ResponseId}", result);
 
             return result.ToApiResult();
         });

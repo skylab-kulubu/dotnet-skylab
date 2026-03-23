@@ -42,8 +42,10 @@ public partial class FormService
 
         parentForm.LinkedFormId = childId;
 
+        childForm.Status = parentForm.Status;
         childForm.AllowAnonymousResponses = parentForm.AllowAnonymousResponses;
         childForm.AllowMultipleResponses = parentForm.AllowMultipleResponses;
+        childForm.RequiresManualReview = parentForm.RequiresManualReview;
 
         childForm.SyncChildCollaborators(parentForm.Collaborators);
 
@@ -56,6 +58,20 @@ public partial class FormService
 
         if (!isOwner)
             return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Bu formun bağlantısını koparmak için yetkiniz yok.");
+
+        if (parentForm.LinkedFormId.HasValue)
+        {
+            var childForm = await _context.Forms.Include(f => f.Collaborators).FirstOrDefaultAsync(f => f.Id == parentForm.LinkedFormId.Value, ct);
+
+            if (childForm != null)
+            {
+                childForm.Status = FormStatus.Closed;
+                childForm.AllowAnonymousResponses = false;
+                childForm.AllowMultipleResponses = false;
+                childForm.RequiresManualReview = false;
+                childForm.Collaborators.Clear();
+            }
+        }
 
         parentForm.LinkedFormId = null;
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Form bağlantısı kaldırıldı.");

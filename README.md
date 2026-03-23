@@ -36,8 +36,7 @@ The project follows a **modular monolith** architecture, designed with Clean Arc
 
 ```
 src/
-├── API/
-│   └── Skylab.Api/                        # Main API entry point, endpoint definitions, DI config
+├── Skylab.Api/                            # Main API entry point, endpoint definitions, DI config
 ├── Modules/
 │   ├── Forms/                             # Form management module
 │   │   ├── Forms.Domain/                  #   Entities, enums, domain models
@@ -164,7 +163,7 @@ General-purpose Excel file generation service.
 dotnet restore src/Skylab.sln
 
 # Run the application
-dotnet run --project src/API/Skylab.Api
+dotnet run --project src/Skylab.Api
 
 # Database migrations run automatically on startup
 ```

@@ -256,7 +256,7 @@ public partial class FormService : IFormService
 
         var latestResponse = await _context.Responses.Where(r => r.FormId == id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
 
-        bool isCompleted = latestResponse?.Status == FormResponseStatus.Approved;
+        bool isCompleted = latestResponse?.Status == FormResponseStatus.Approved || latestResponse?.Status == FormResponseStatus.NonRestrict;
         int step = ResolveStep(isParent, isChild, isCompleted);
 
         if (latestResponse != null)
@@ -272,7 +272,7 @@ public partial class FormService : IFormService
                     "Form cevabınız inceleniyor, lütfen bekleyiniz."
                 );
             }
-            if (latestResponse.Status == FormResponseStatus.Approved)
+            if (latestResponse.Status == FormResponseStatus.Approved || latestResponse.Status == FormResponseStatus.NonRestrict)
             {
                 if (form.LinkedFormId.HasValue) return await GetDisplayFormByIdAsync(form.LinkedFormId.Value, userId, cancellationToken);
                 if (!form.AllowMultipleResponses)

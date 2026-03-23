@@ -32,12 +32,12 @@ git clone <repo-url>
 cd forms-backend
 
 # Create .env file
-cp src/API/Skylab.Api/.env.example src/API/Skylab.Api/.env
+cp src/Skylab.Api/.env.example src/Skylab.Api/.env
 # Edit .env with your local values
 
 # Restore dependencies and run
 dotnet restore src/Skylab.sln
-dotnet run --project src/API/Skylab.Api
+dotnet run --project src/Skylab.Api
 ```
 
 ---
@@ -46,8 +46,7 @@ dotnet run --project src/API/Skylab.Api
 
 ```
 src/
-├── API/
-│   └── Skylab.Api/                        # Entry point - DI, endpoints, middleware
+├── Skylab.Api/                            # Entry point - DI, endpoints, middleware
 ├── Modules/
 │   ├── Forms/                             # Form management module
 │   │   ├── Forms.Domain/                  #   Entities, enums, domain models
@@ -146,7 +145,7 @@ dotnet add src/Modules/Notifications/Notifications.Application reference \
   src/Shared/Skylab.Shared.Infrastructure
 
 # API → Application & Infrastructure
-dotnet add src/API/Skylab.Api reference \
+dotnet add src/Skylab.Api reference \
   src/Modules/Notifications/Notifications.Application \
   src/Modules/Notifications/Notifications.Infrastructure
 ```
@@ -261,7 +260,7 @@ If new entities were added:
 ```bash
 dotnet ef migrations add AddNotifications \
   --project src/Modules/Notifications/Notifications.Infrastructure \
-  --startup-project src/API/Skylab.Api
+  --startup-project src/Skylab.Api
 ```
 
 Migrations run automatically on application startup.

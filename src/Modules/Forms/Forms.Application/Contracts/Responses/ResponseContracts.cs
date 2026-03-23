@@ -22,6 +22,11 @@ public record ResponseContract(
     DateTime? ArchivedAt
 );
 
+public record ResponseSubmitResult(
+    Guid ResponseId,
+    Guid? LinkedFormId
+);
+
 public record ResponseSummaryContract(
     Guid Id,
     UserContract? User,

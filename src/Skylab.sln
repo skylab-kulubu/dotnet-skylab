@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Skylab.Api", "API\Skylab.Api\Skylab.Api.csproj", "{D4B0D334-F561-4CB5-B9A8-F6158802B2AE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Skylab.Api", "Skylab.Api\Skylab.Api.csproj", "{D4B0D334-F561-4CB5-B9A8-F6158802B2AE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Forms.Infrastructure", "Modules\Forms\Forms.Infrastructure\Forms.Infrastructure.csproj", "{8575B212-3458-4561-ABF1-DB101AD92D8A}"
 EndProject

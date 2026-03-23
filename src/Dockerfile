@@ -10,7 +10,7 @@ WORKDIR /src
 COPY . .
 RUN dotnet restore "Skylab.sln"
 
-WORKDIR "/src/API/Skylab.Api"
+WORKDIR "/src/Skylab.Api"
 RUN dotnet publish "Skylab.Api.csproj" -c Release -o /app/publish
 
 # 3) Final image
