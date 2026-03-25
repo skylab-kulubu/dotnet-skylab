@@ -46,13 +46,24 @@ public class FormResponseService : IFormResponseService
 
         if (parentForm != null && userId.HasValue)
         {
-            var parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
+            var parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
 
             if (parentResponse == null)
                 return new ServiceResult<ResponseSubmitResult>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamayı doldurmanız gerekmektedir.");
 
             if (parentForm.RequiresManualReview && parentResponse.Status != FormResponseStatus.Approved)
                 return new ServiceResult<ResponseSubmitResult>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamanın onaylanması gerekmektedir.");
+
+            if (form.AllowMultipleResponses)
+            {
+                var lastChildResponse = await _context.Responses
+                    .Where(r => r.FormId == form.Id && r.UserId == userId && !r.IsArchived)
+                    .OrderByDescending(r => r.SubmittedAt)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (lastChildResponse != null && parentResponse.SubmittedAt <= lastChildResponse.SubmittedAt)
+                    return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Yeni bir yanıt göndermek için önceki aşamayı tekrar doldurmanız gerekmektedir.");
+            }
         }
         var response = MapToEntity(form, contract.Responses, contract.TimeSpent, userId);
 
@@ -218,11 +229,22 @@ public class FormResponseService : IFormResponseService
 
         if (targetLinkedFormId.HasValue && response.UserId.HasValue)
         {
-            linkedResponseId = await _context.Responses.AsNoTracking()
-                .Where(r => r.FormId == targetLinkedFormId.Value && r.UserId == response.UserId)
-                .OrderByDescending(r => r.SubmittedAt)
-                .Select(r => (Guid?)r.Id)
-                .FirstOrDefaultAsync(cancellationToken);
+            if (relationshipStatus == FormRelationshipStatus.Parent)
+            {
+                linkedResponseId = await _context.Responses.AsNoTracking()
+                    .Where(r => r.FormId == targetLinkedFormId.Value && r.UserId == response.UserId && r.SubmittedAt >= response.SubmittedAt)
+                    .OrderBy(r => r.SubmittedAt)
+                    .Select(r => (Guid?)r.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            else
+            {
+                linkedResponseId = await _context.Responses.AsNoTracking()
+                    .Where(r => r.FormId == targetLinkedFormId.Value && r.UserId == response.UserId && r.SubmittedAt <= response.SubmittedAt)
+                    .OrderByDescending(r => r.SubmittedAt)
+                    .Select(r => (Guid?)r.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
         }
 
         var userIds = new List<Guid>();

@@ -222,6 +222,8 @@ public partial class FormService : IFormService
         bool isParent = form.LinkedFormId.HasValue;
         bool isChild = parentForm != null;
 
+        FormResponse? parentResponse = null;
+
         if (parentForm != null)
         {
             if (userId == null)
@@ -233,7 +235,7 @@ public partial class FormService : IFormService
                 );
             }
 
-            var parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
+            parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
             if (parentForm.RequiresManualReview)
             {
                 if (parentResponse == null || parentResponse.Status != FormResponseStatus.Approved)
@@ -281,7 +283,8 @@ public partial class FormService : IFormService
                             .FirstOrDefaultAsync(cancellationToken);
 
                         bool childCompleted = childResponse != null &&
-                            (childResponse.Status == FormResponseStatus.Approved || childResponse.Status == FormResponseStatus.NonRestrict);
+                            (childResponse.Status == FormResponseStatus.Approved || childResponse.Status == FormResponseStatus.NonRestrict) &&
+                            childResponse.SubmittedAt > latestResponse.SubmittedAt;
 
                         if (!childCompleted)
                             return await GetDisplayFormByIdAsync(form.LinkedFormId.Value, userId, cancellationToken);
@@ -297,6 +300,14 @@ public partial class FormService : IFormService
 
                 if (isChild)
                 {
+                    if (form.AllowMultipleResponses && parentResponse != null && parentResponse.SubmittedAt > latestResponse.SubmittedAt)
+                    {
+                        return new ServiceResult<FormDisplayPayload>(
+                            ServiceStatus.Success,
+                            MapToDisplayPayload(form, 3, null, null)
+                        );
+                    }
+
                     return new ServiceResult<FormDisplayPayload>(
                         ServiceStatus.Completed,
                         new FormDisplayPayload(null, step, note, date),
