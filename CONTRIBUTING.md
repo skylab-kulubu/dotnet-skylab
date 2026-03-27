@@ -52,6 +52,10 @@ src/
 │   │   ├── Forms.Domain/                  #   Entities, enums, domain models
 │   │   ├── Forms.Infrastructure/          #   DbContext, entity configs, migrations
 │   │   └── Forms.Application/             #   Services, DTOs, business logic
+│   ├── Feedbacks/                         # Feedback collection module
+│   │   ├── Feedbacks.Domain/              #   Entities, enums
+│   │   ├── Feedbacks.Infrastructure/      #   DbContext, entity configs
+│   │   └── Feedbacks.Application/         #   Services, DTOs, business logic
 │   └── Exports/                           # Excel export module
 │       └── Exports.Application/           #   Excel file generation service
 └── Shared/                                # Shared libraries across modules
@@ -80,6 +84,7 @@ src/
 | Module | Layers | Description |
 |--------|--------|------------|
 | **Forms** | Domain + Application + Infrastructure | Form CRUD, response management, collaboration, metrics |
+| **Feedbacks** | Domain + Application + Infrastructure | Feedback collection and management |
 | **Exports** | Application only | General-purpose Excel export service |
 
 > Not every module needs all layers. Simple services like Exports can work with just an Application layer.

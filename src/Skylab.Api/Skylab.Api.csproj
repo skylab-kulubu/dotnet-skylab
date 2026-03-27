@@ -26,6 +26,9 @@
     <ProjectReference Include="..\Modules\Forms\Forms.Application\Forms.Application.csproj" />
     <ProjectReference Include="..\Modules\Forms\Forms.Infrastructure\Forms.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Exports\Exports.Application\Exports.Application.csproj" />
+    <ProjectReference Include="..\Modules\Feedbacks\Feedbacks.Domain\Feedbacks.Domain.csproj" />
+    <ProjectReference Include="..\Modules\Feedbacks\Feedbacks.Application\Feedbacks.Application.csproj" />
+    <ProjectReference Include="..\Modules\Feedbacks\Feedbacks.Infrastructure\Feedbacks.Infrastructure.csproj" />
     <ProjectReference Include="..\Shared\Skylab.Shared.Infrastructure\Skylab.Shared.Infrastructure.csproj" />
   </ItemGroup>
 

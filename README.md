@@ -14,7 +14,7 @@
 
 <br/>
 
-> Modular monolith backend with Clean Architecture - currently serving Forms and Export modules, designed to grow with new service modules over time.
+> Modular monolith backend with Clean Architecture - currently serving Forms, Feedbacks, and Export modules, designed to grow with new service modules over time.
 
 ---
 
@@ -42,6 +42,10 @@ src/
 │   │   ├── Forms.Domain/                  #   Entities, enums, domain models
 │   │   ├── Forms.Application/             #   Services, DTOs, business logic
 │   │   └── Forms.Infrastructure/          #   DbContext, entity configs, migrations
+│   ├── Feedbacks/                         # Feedback collection module
+│   │   ├── Feedbacks.Domain/              #   Entities, enums
+│   │   ├── Feedbacks.Application/         #   Services, DTOs, business logic
+│   │   └── Feedbacks.Infrastructure/      #   DbContext, entity configs
 │   └── Exports/                           # Excel export module
 │       └── Exports.Application/           #   Excel file generation service
 └── Shared/                                # Shared libraries across modules
@@ -84,6 +88,22 @@ Dynamic form creation and response management module.
 | `Responses` | User responses, review info, archive status |
 | `FormCollaborators` | Collaborator roles (composite key: UserId + FormId) |
 | `ComponentGroups` | Reusable form component templates |
+
+### Feedbacks Module
+
+Feedback collection and management module for gathering input from users across teams.
+
+**Core Features:**
+
+- Feedback creation (via email or system)
+- Filtering by topic, source, and team
+- Paginated listing with sort direction
+
+**Database Models:**
+
+| Table | Description |
+|-------|------------|
+| `Feedbacks` | Feedback entries with topic, content, source, and team assignment |
 
 ### Exports Module
 
@@ -134,6 +154,14 @@ General-purpose Excel file generation service.
 | `POST` | `/api/admin/forms/component-groups` | Create group |
 | `PUT` | `/api/admin/forms/component-groups/{id}` | Update group |
 | `DELETE` | `/api/admin/forms/component-groups/{id}` | Delete group |
+
+### Feedbacks
+
+| Method | Endpoint | Description |
+|--------|----------|------------|
+| `POST` | `/api/feedbacks` | Create new feedback |
+| `GET` | `/api/feedbacks` | List all feedbacks (filtered, paginated) |
+| `GET` | `/api/feedbacks/{id}` | Get feedback by ID |
 
 ### Export - Internal
 

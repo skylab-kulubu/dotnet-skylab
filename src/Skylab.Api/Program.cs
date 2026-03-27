@@ -1,5 +1,7 @@
 using Skylab.Forms.Infrastructure.Storage;
 using Skylab.Forms.Application.Services;
+using Skylab.Feedbacks.Infrastructure.Storage;
+using Skylab.Feedbacks.Application.Services;
 using Skylab.Exports.Application.Services;
 using Skylab.Shared.Infrastructure.Caching;
 using Skylab.Api.Endpoints;
@@ -34,6 +36,18 @@ builder.Services.AddDbContext<FormsDbContext>(options =>
         });
 });
 
+builder.Services.AddDbContext<FeedbacksDbContext>(options =>
+{
+    options.UseNpgsql(Environment.GetEnvironmentVariable("CONNECTION_STRING"),
+        npgsqlOptionsAction: sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: new[] { "28P01" });
+        });
+});
+
 builder.Services.AddEurekaDiscoveryClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -46,6 +60,8 @@ builder.Services.AddScoped<IFormResponseService, FormResponseService>();
 builder.Services.AddScoped<IFormMetricService, FormMetricService>();
 builder.Services.AddScoped<IFormDraftService, FormDraftService>();
 builder.Services.AddScoped<IComponentGroupService, ComponentGroupService>();
+
+builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 
 builder.Services.AddScoped<IExcelService, ExcelService>();
 
@@ -62,8 +78,11 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
     try
     {
-        var context = services.GetRequiredService<FormsDbContext>();
-        context.Database.Migrate();
+        var formsContext = services.GetRequiredService<FormsDbContext>();
+        formsContext.Database.Migrate();
+
+        var feedbacksContext = services.GetRequiredService<FeedbacksDbContext>();
+        feedbacksContext.Database.Migrate();
     }
     catch (Exception ex)
     {
@@ -80,6 +99,7 @@ app.UseCors("AllowFrontend");
 
 app.MapFormAdminEndpoints();
 app.MapFormEndpoints();
+app.MapFeedbackEndpoints();
 app.MapExportEndpoints();
 
 app.Run();
