@@ -1,4 +1,4 @@
-namespace Skylab.Forms.Application.Contracts;
+namespace Skylab.Shared.Application.Contracts;
 
 public record ApiResponse<T>(
     bool Success,

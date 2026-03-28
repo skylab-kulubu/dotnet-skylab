@@ -1,4 +1,4 @@
-namespace Skylab.Forms.Domain.Entities;
+namespace Skylab.Shared.Domain.Entities;
 
 public class ExternalUser
 {

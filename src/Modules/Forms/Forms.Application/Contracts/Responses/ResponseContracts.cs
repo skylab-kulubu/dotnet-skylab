@@ -1,6 +1,6 @@
 using Skylab.Forms.Domain.Enums;
 using Skylab.Forms.Domain.Models;
-using Skylab.Forms.Application.Contracts.Auth;
+using Skylab.Shared.Application.Contracts.Auth;
 
 namespace Skylab.Forms.Application.Contracts.Responses;
 

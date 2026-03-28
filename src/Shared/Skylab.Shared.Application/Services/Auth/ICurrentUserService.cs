@@ -1,4 +1,4 @@
-namespace Skylab.Forms.Application.Services;
+namespace Skylab.Shared.Application.Services;
 
 public interface ICurrentUserService
 {

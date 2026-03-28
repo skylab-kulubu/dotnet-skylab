@@ -1,4 +1,4 @@
-namespace Skylab.Forms.Application.Contracts.Auth;
+namespace Skylab.Shared.Application.Contracts.Auth;
 
 public record UserContract(
     Guid Id,

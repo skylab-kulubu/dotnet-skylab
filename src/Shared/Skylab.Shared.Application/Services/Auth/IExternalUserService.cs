@@ -1,6 +1,6 @@
-using Skylab.Forms.Application.Contracts.Auth;
+using Skylab.Shared.Application.Contracts.Auth;
 
-namespace Skylab.Forms.Application.Services;
+namespace Skylab.Shared.Application.Services;
 
 public interface IExternalUserService
 {

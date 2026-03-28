@@ -1,4 +1,5 @@
 using Skylab.Shared.Application.Contracts;
+using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Forms.Domain.Enums;
@@ -6,7 +7,7 @@ using Skylab.Forms.Infrastructure.Storage;
 using Microsoft.EntityFrameworkCore;
 using Skylab.Forms.Application.Validators;
 using Skylab.Forms.Application.Contracts;
-using Skylab.Forms.Application.Contracts.Auth;
+using Skylab.Shared.Application.Contracts.Auth;
 using Skylab.Forms.Application.Contracts.Forms;
 using Skylab.Forms.Application.Contracts.Collaborators;
 using System.Text.Json;

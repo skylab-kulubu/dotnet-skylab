@@ -3,6 +3,7 @@ using Skylab.Forms.Application.Services;
 using Skylab.Feedbacks.Infrastructure.Storage;
 using Skylab.Feedbacks.Application.Services;
 using Skylab.Exports.Application.Services;
+using Skylab.Shared.Application.Services;
 using Skylab.Shared.Infrastructure.Caching;
 using Skylab.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
@@ -67,7 +68,7 @@ builder.Services.AddScoped<IExcelService, ExcelService>();
 
 builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
-builder.Services.AddHttpClient<ICurrentUserService, RemoteCurrentUserService>(client => { client.BaseAddress = new Uri("http://super-skylab"); }).AddServiceDiscovery();
+builder.Services.AddScoped<ICurrentUserService, JwtCurrentUserService>();
 builder.Services.AddHttpClient<IExternalUserService, ExternalUserService>(client => { client.BaseAddress = new Uri("http://super-skylab"); }).AddServiceDiscovery();
 
 
