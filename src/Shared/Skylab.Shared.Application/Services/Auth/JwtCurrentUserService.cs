@@ -1,38 +1,80 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Skylab.Shared.Application.Services;
 
-public class JwtCurrentUserService : ICurrentUserService
+public class JwtCurrentUserService(IHttpContextAccessor httpContextAccessor) : ICurrentUserService
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public JwtCurrentUserService(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
-
     public Task<Guid?> GetUserIdAsync(CancellationToken cancellationToken = default)
     {
-        var authHeader = _httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
-        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
-            return Task.FromResult<Guid?>(null);
+        var jwt = ParseToken();
+        if (jwt == null) return Task.FromResult<Guid?>(null);
+
+        if (Guid.TryParse(jwt.Subject, out var userId))
+            return Task.FromResult<Guid?>(userId);
+
+        return Task.FromResult<Guid?>(null);
+    }
+
+    public Task<bool> HasRoleAsync(string role, string? client = null, CancellationToken cancellationToken = default)
+    {
+        var jwt = ParseToken();
+        if (jwt == null) return Task.FromResult(false);
 
         try
         {
-            var token = authHeader["Bearer ".Length..];
-            var jwt = new JsonWebToken(token);
+            string? claimValue;
 
-            var sub = jwt.Subject;
+            if (client == null)
+            {
+                claimValue = jwt.GetClaim("realm_access")?.Value;
+            }
+            else
+            {
+                var resourceAccess = jwt.GetClaim("resource_access")?.Value;
+                if (string.IsNullOrEmpty(resourceAccess)) return Task.FromResult(false);
 
-            if (Guid.TryParse(sub, out var userId))
-                return Task.FromResult<Guid?>(userId);
+                using var resourceDoc = JsonDocument.Parse(resourceAccess);
+                if (!resourceDoc.RootElement.TryGetProperty(client, out var clientElement))
+                    return Task.FromResult(false);
 
-            return Task.FromResult<Guid?>(null);
+                claimValue = clientElement.GetRawText();
+            }
+
+            if (string.IsNullOrEmpty(claimValue)) return Task.FromResult(false);
+
+            using var doc = JsonDocument.Parse(claimValue);
+            if (!doc.RootElement.TryGetProperty("roles", out var roles))
+                return Task.FromResult(false);
+
+            foreach (var r in roles.EnumerateArray())
+            {
+                if (string.Equals(r.GetString(), role, StringComparison.OrdinalIgnoreCase))
+                    return Task.FromResult(true);
+            }
+
+            return Task.FromResult(false);
         }
         catch
         {
-            return Task.FromResult<Guid?>(null);
+            return Task.FromResult(false);
+        }
+    }
+
+    private JsonWebToken? ParseToken()
+    {
+        var authHeader = httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+            return null;
+
+        try
+        {
+            return new JsonWebToken(authHeader["Bearer ".Length..]);
+        }
+        catch
+        {
+            return null;
         }
     }
 }

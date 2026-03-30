@@ -1,6 +1,7 @@
 using Skylab.Forms.Domain.Enums;
 using Skylab.Forms.Domain.Models;
 using Skylab.Forms.Application.Contracts.Collaborators;
+using Skylab.Shared.Application.Contracts.Auth;
 
 namespace Skylab.Forms.Application.Contracts.Forms;
 
@@ -37,6 +38,20 @@ public record FormSummaryContract(
     bool AllowAnonymousResponses,
     bool AllowMultipleResponses,
     bool RequiresManualReview,
+    DateTime? UpdatedAt,
+    int ResponseCount
+);
+
+public record FormAllSummaryContract(
+    Guid Id,
+    string Title,
+    FormStatus Status,
+    LinkedFormContract? LinkedForm,
+    UserContract CreatedBy,
+    bool AllowAnonymousResponses,
+    bool AllowMultipleResponses,
+    bool RequiresManualReview,
+    DateTime CreatedAt,
     DateTime? UpdatedAt,
     int ResponseCount
 );

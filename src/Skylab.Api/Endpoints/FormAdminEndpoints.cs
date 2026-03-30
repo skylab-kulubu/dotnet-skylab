@@ -25,6 +25,15 @@ public static class FormAdminEndpoints
             return result.ToApiResult();
         });
 
+        group.MapGet("/all", async (IFormService service, ICurrentUserService userService, [AsParameters] GetAllFormsRequest request, CancellationToken ct) =>
+        {
+            if (!await userService.HasRoleAsync("skyforms:*", "skyforms", ct))
+                return ServiceStatus.NotAuthorized.ToApiResult();
+
+            var result = await service.GetAllFormsAsync(request, ct);
+            return result.ToApiResult();
+        });
+
         group.MapGet("/metrics", async (IFormMetricService service, ICurrentUserService userService, CancellationToken ct) =>
         {
             var userId = await userService.GetUserIdAsync(ct);

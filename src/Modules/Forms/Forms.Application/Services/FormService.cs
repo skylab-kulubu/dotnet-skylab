@@ -19,12 +19,14 @@ public partial class FormService : IFormService
     private readonly FormsDbContext _context;
     private readonly IExternalUserService _userService;
     private readonly IFormDraftService _draftService;
+    private readonly ICurrentUserService _currentUserService;
 
-    public FormService(FormsDbContext context, IExternalUserService userService, IFormDraftService draftService)
+    public FormService(FormsDbContext context, IExternalUserService userService, IFormDraftService draftService, ICurrentUserService currentUserService)
     {
         _context = context;
         _userService = userService;
         _draftService = draftService;
+        _currentUserService = currentUserService;
     }
     public async Task<ServiceResult<FormContract>> CreateFormAsync(FormUpsertRequest contract, Guid userId, CancellationToken cancellationToken = default)
     {
@@ -194,14 +196,18 @@ public partial class FormService : IFormService
 
         if (form == null) return new ServiceResult<FormContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
+        var isAdmin = await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken);
+
         var collaborator = form.Collaborators.FirstOrDefault(c => c.UserId == userId && (c.Role == CollaboratorRole.Owner || c.Role == CollaboratorRole.Editor));
-        if (collaborator == null) return new ServiceResult<FormContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
+        if (!isAdmin && collaborator == null)
+            return new ServiceResult<FormContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
+
+        var userRole = collaborator?.Role ?? CollaboratorRole.None;
 
         var collaboratorIds = form.Collaborators.Where(c => c.Role != CollaboratorRole.None).Select(c => c.UserId).ToList();
         var users = await _userService.GetUsersAsync(collaboratorIds, cancellationToken);
 
         var isChildForm = await _context.Forms.AnyAsync(f => f.LinkedFormId == id, cancellationToken);
-        var userRole = collaborator.Role;
         return new ServiceResult<FormContract>(ServiceStatus.Success, Data: MapToContract(form, users, isChildForm, userRole, form.LinkedForm?.Title));
     }
     public async Task<ServiceResult<FormDisplayPayload>> GetDisplayFormByIdAsync(Guid id, Guid? userId, CancellationToken cancellationToken = default)
@@ -495,6 +501,79 @@ public partial class FormService : IFormService
 
         return new ServiceResult<PagedResult<FormSummaryContract>>(ServiceStatus.Success, Data: resultData);
     }
+
+    public async Task<ServiceResult<PagedResult<FormAllSummaryContract>>> GetAllFormsAsync(GetAllFormsRequest request, CancellationToken cancellationToken = default)
+    {
+        var query = _context.Forms.AsNoTracking().Include(f => f.LinkedForm).Where(f => f.Status != FormStatus.Deleted);
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+            query = query.Where(f => EF.Functions.ILike(f.Title, $"%{request.Search.Trim()}%"));
+
+        if (request.AllowAnonymous.HasValue)
+            query = query.Where(f => f.AllowAnonymousResponses == request.AllowAnonymous.Value);
+
+        if (request.AllowMultiple.HasValue)
+            query = query.Where(f => f.AllowMultipleResponses == request.AllowMultiple.Value);
+
+        if (request.RequiresManualReview.HasValue)
+            query = query.Where(f => f.RequiresManualReview == request.RequiresManualReview.Value);
+
+        if (request.HasLinkedForm.HasValue)
+        {
+            if (request.HasLinkedForm.Value)
+                query = query.Where(f => f.LinkedFormId != null);
+            else
+                query = query.Where(f => f.LinkedFormId == null);
+        }
+
+        if (request.SortDirection?.ToLower() == "ascending")
+            query = query.OrderBy(f => f.UpdatedAt ?? f.CreatedAt);
+        else
+            query = query.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var rawForms = await query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)
+            .Select(f => new
+            {
+                f.Id,
+                f.Title,
+                f.Status,
+                LinkedForm = f.LinkedForm != null ? new LinkedFormContract(f.LinkedForm.Id, f.LinkedForm.Title) : null,
+                OwnerUserId = f.Collaborators.Where(c => c.Role == CollaboratorRole.Owner).Select(c => c.UserId).FirstOrDefault(),
+                f.AllowAnonymousResponses,
+                f.AllowMultipleResponses,
+                f.RequiresManualReview,
+                f.CreatedAt,
+                f.UpdatedAt,
+                ResponseCount = f.Responses.Count()
+            }).ToListAsync(cancellationToken);
+
+        var ownerIds = rawForms.Select(f => f.OwnerUserId).Distinct().ToList();
+        var users = await _userService.GetUsersAsync(ownerIds, cancellationToken);
+        var userMap = users.ToDictionary(u => u.Id);
+
+        var forms = rawForms.Select(f =>
+        {
+            userMap.TryGetValue(f.OwnerUserId, out var owner);
+            return new FormAllSummaryContract(
+                f.Id,
+                f.Title,
+                f.Status,
+                f.LinkedForm,
+                owner ?? new UserContract(f.OwnerUserId, null, null, null),
+                f.AllowAnonymousResponses,
+                f.AllowMultipleResponses,
+                f.RequiresManualReview,
+                f.CreatedAt,
+                f.UpdatedAt,
+                f.ResponseCount
+            );
+        }).ToList();
+
+        return new ServiceResult<PagedResult<FormAllSummaryContract>>(ServiceStatus.Success, Data: new PagedResult<FormAllSummaryContract>(forms, totalCount, request.Page, request.PageSize));
+    }
+
     public async Task<ServiceResult<List<LinkableFormsContract>>> GetLinkableFormsAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
         var currentForm = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);

@@ -1,4 +1,5 @@
 using Skylab.Shared.Application.Contracts;
+using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Domain.Enums;
 using Skylab.Forms.Application.Contracts.Metrics;
@@ -10,10 +11,12 @@ namespace Skylab.Forms.Application.Services;
 public class FormMetricService : IFormMetricService
 {
     private readonly FormsDbContext _context;
+    private readonly ICurrentUserService _currentUserService;
 
-    public FormMetricService(FormsDbContext context)
+    public FormMetricService(FormsDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
+        _currentUserService = currentUserService;
     }
 
     public async Task<ServiceResult<FormMetricsContract>> GetFormMetricsAsync(Guid formId, Guid userId, CancellationToken cancellationToken = default)
@@ -22,9 +25,13 @@ public class FormMetricService : IFormMetricService
         if (!formExists)
             return new ServiceResult<FormMetricsContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
-        if (!isAuthorized)
-            return new ServiceResult<FormMetricsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun yanıtlarını görüntüleme yetkiniz yok.");
+        var isAdmin = await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken);
+        if (!isAdmin)
+        {
+            var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
+            if (!isAuthorized)
+                return new ServiceResult<FormMetricsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun metriklerini görüntüleme yetkiniz yok.");
+        }
 
         var query = _context.Responses.AsNoTracking().Where(r => r.FormId == formId);
 
