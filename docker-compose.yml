@@ -9,17 +9,21 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: skylab
       POSTGRES_DB: dotnet_db
-    ports:
-      - "5432:5432"
+    #ports:
+    #  - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - skynet
 
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+   # ports:
+   #   - "6379:6379"
+    networks:
+      - skynet
 
   api:
     container_name: dotnet-api
@@ -30,18 +34,24 @@ services:
       - postgres
       - redis
     environment:
-      CONNECTION_STRING: "Host=postgres;Port=5432;Database=dotnet_db;Username=admin;Password=skylab;Keepalive=30;"
-      ALLOWED_ORIGIN: "http://localhost:3000"
+      CONNECTION_STRING: "Host=postgres;Port=5432;Database=dotnet_db;Username=admin;Password=skylab"
+      ALLOWED_ORIGIN: "http://localhost:5000"
       Redis__ConnectionString: "redis:6379"
       ASPNETCORE_URLS: "http://0.0.0.0:8080"
 
-      Spring__Application__Name: "DotNetApi"
+      Spring__Application__Name: "DotnetApi"
       Eureka__Client__ServiceUrl: "http://eureka-server:8761/eureka/"
       Eureka__Client__ValidateCertificates: "false"
       Eureka__Instance__PreferIpAddress: "true"
-    ports:
-      - "5000:8080"   # Host: 5000, Container: 8080
+    #ports:
+    #  - "5000:8080"   # Host: 5000, Container: 8080
     restart: unless-stopped
+    networks:
+      - skynet
 
 volumes:
   pgdata:
+
+networks:
+  skynet:
+    external: true
