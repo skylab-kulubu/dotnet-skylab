@@ -25,13 +25,9 @@ public class FormMetricService : IFormMetricService
         if (!formExists)
             return new ServiceResult<FormMetricsContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var isAdmin = await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken);
-        if (!isAdmin)
-        {
-            var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
-            if (!isAuthorized)
-                return new ServiceResult<FormMetricsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun metriklerini görüntüleme yetkiniz yok.");
-        }
+        var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
+        if (!isAuthorized && !await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken))
+            return new ServiceResult<FormMetricsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun metriklerini görüntüleme yetkiniz yok.");
 
         var query = _context.Responses.AsNoTracking().Where(r => r.FormId == formId);
 

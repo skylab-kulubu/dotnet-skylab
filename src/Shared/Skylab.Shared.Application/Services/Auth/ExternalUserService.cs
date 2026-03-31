@@ -38,12 +38,22 @@ public class ExternalUserService : IExternalUserService
     public async Task<List<UserContract>> GetUsersAsync(IEnumerable<Guid> userIds, CancellationToken cancellationToken = default)
     {
         var distinctIds = userIds.Distinct().Where(id => id != Guid.Empty).ToList();
-        if (!distinctIds.Any()) return new List<UserContract>();
+        if (!distinctIds.Any()) return [];
 
-        var tasks = distinctIds.Select(id => GetUserAsync(id, cancellationToken));
-        var results = await Task.WhenAll(tasks);
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync("/internal/api/users/batch", distinctIds, _jsonOptions, cancellationToken);
+            var result = await response.Content.ReadFromJsonAsync<ApiResponse<List<ExternalUser>>>(_jsonOptions, cancellationToken);
 
-        return results.Where(u => u != null).ToList()!;
+            if (result != null && result.Success && result.Data != null)
+                return result.Data.Select(MapToContract).ToList();
+
+            return [];
+        }
+        catch (Exception)
+        {
+            return [];
+        }
     }
 
     private static UserContract MapToContract(ExternalUser user)

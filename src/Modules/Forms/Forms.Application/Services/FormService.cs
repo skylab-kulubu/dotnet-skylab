@@ -196,10 +196,8 @@ public partial class FormService : IFormService
 
         if (form == null) return new ServiceResult<FormContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var isAdmin = await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken);
-
         var collaborator = form.Collaborators.FirstOrDefault(c => c.UserId == userId && (c.Role == CollaboratorRole.Owner || c.Role == CollaboratorRole.Editor));
-        if (!isAdmin && collaborator == null)
+        if (collaborator == null && !await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken))
             return new ServiceResult<FormContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
 
         var userRole = collaborator?.Role ?? CollaboratorRole.None;
@@ -413,9 +411,10 @@ public partial class FormService : IFormService
 
         if (form == null) return new ServiceResult<FormInfoContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var canAccess = form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
+        var collaborator = form.Collaborators.FirstOrDefault(c => c.UserId == userId && c.Role != CollaboratorRole.None);
 
-        if (!canAccess) return new ServiceResult<FormInfoContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
+        if (collaborator == null && !await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken))
+            return new ServiceResult<FormInfoContract>(ServiceStatus.NotAuthorized, Message: "Yetkiniz yok.");
 
         var counts = await _context.Responses.AsNoTracking()
             .Where(r => r.FormId == id)
@@ -439,7 +438,8 @@ public partial class FormService : IFormService
             responseCount,
             waitingResponses,
             AverageTimeSeconds: averageTime,
-            LastSeenUsers: Array.Empty<FormLastSeenUserContract>()
+            LastSeenUsers: Array.Empty<FormLastSeenUserContract>(),
+            UserRole: collaborator?.Role ?? CollaboratorRole.None
         );
 
         return new ServiceResult<FormInfoContract>(ServiceStatus.Success, Data: contract);
@@ -630,7 +630,7 @@ public partial class FormService : IFormService
         {
             foreach (var collaborator in form.Collaborators)
             {
-                var userDetail = users.FirstOrDefault(u => u.Id == collaborator.UserId) ?? new UserContract(collaborator.UserId, null, "??", null);
+                var userDetail = users.FirstOrDefault(u => u.Id == collaborator.UserId) ?? new UserContract(collaborator.UserId, null, null, null);
                 collaboratorContracts.Add(new FormCollaboratorContract(
                     userDetail,
                     collaborator.Role

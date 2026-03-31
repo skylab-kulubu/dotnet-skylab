@@ -10,7 +10,8 @@ public record FormInfoContract(
     int ResponseCount,
     int WaitingResponses,
     double? AverageTimeSeconds,
-    IReadOnlyList<FormLastSeenUserContract> LastSeenUsers
+    IReadOnlyList<FormLastSeenUserContract> LastSeenUsers,
+    CollaboratorRole UserRole
 );
 
 public record FormLastSeenUserContract(
