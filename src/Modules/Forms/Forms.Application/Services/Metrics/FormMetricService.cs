@@ -65,25 +65,44 @@ public class FormMetricService : IFormMetricService
             return new ServiceResult<FormMetricsContract>(ServiceStatus.Success, Data: emptyMetrics);
         }
 
-        var sevenDaysAgo = DateTime.UtcNow.AddDays(-7).Date;
-        var dailyData = await query.Where(r => r.SubmittedAt >= sevenDaysAgo)
+        var now = DateTime.UtcNow;
+
+        var sevenDaysAgo = now.AddDays(-7).Date;
+        var dailyData = await query
+            .Where(r => r.SubmittedAt >= sevenDaysAgo)
             .GroupBy(r => r.SubmittedAt.Date)
             .Select(g => new { Date = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
-
+            
         var dailyTrend = Enumerable.Range(0, 7).Select(offset =>
         {
-            var targetDate = DateTime.UtcNow.AddDays(-6 + offset).Date;
-            var data = dailyData.FirstOrDefault(d => d.Date == targetDate);
-            return new TrendItemContract($"d-{offset}", targetDate.ToString("ddd"), data?.Count ?? 0);
+            var targetDate = sevenDaysAgo.AddDays(offset + 1);
+            var data = dailyData.FirstOrDefault(d => d.Date == targetDate.Date);
+
+            return new TrendItemContract(
+                $"d-{offset}",
+                targetDate.ToString("ddd"),
+                data?.Count ?? 0
+            );
         }).ToList();
 
-        var hourlyData = await query.GroupBy(r => r.SubmittedAt.Hour).Select(g => new { Hour = g.Key, Count = g.Count() }).ToListAsync(cancellationToken);
-        var currentHour = DateTime.UtcNow.Hour;
-        var hourlyTrend = Enumerable.Range(0, 24).Select(offset => {
-            var targetHour = (currentHour + 1 + offset) % 24;
-            var data = hourlyData.FirstOrDefault(d => d.Hour == targetHour);
-            return new TrendItemContract($"h-{targetHour}", targetHour.ToString("00"), data?.Count ?? 0);
+        var twentyFourHoursAgo = now.AddHours(-24);
+        var hourlyDataRaw = await query
+            .Where(r => r.SubmittedAt >= twentyFourHoursAgo)
+            .GroupBy(r => new { r.SubmittedAt.Date, r.SubmittedAt.Hour })
+            .Select(g => new { g.Key.Date, g.Key.Hour, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        var hourlyTrend = Enumerable.Range(0, 24).Select(offset =>
+        {
+            var targetDateTime = twentyFourHoursAgo.AddHours(offset + 1);
+            var data = hourlyDataRaw.FirstOrDefault(d => d.Date == targetDateTime.Date && d.Hour == targetDateTime.Hour);
+
+            return new TrendItemContract(
+                $"h-{targetDateTime.Hour}",
+                targetDateTime.ToString("HH:00"),
+                data?.Count ?? 0
+            );
         }).ToList();
 
         var result = new FormMetricsContract(
