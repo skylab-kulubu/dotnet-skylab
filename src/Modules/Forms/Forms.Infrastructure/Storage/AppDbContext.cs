@@ -1,10 +1,11 @@
+using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Shared.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Infrastructure.Storage;
 
-public class FormsDbContext(DbContextOptions<FormsDbContext> options) : DbContext(options)
+public class FormsDbContext(DbContextOptions<FormsDbContext> options) : DbContext(options), IFormsDbContext
 {
     public DbSet<Form> Forms { get; set; }
     public DbSet<FormCollaborator> Collaborators { get; set; }

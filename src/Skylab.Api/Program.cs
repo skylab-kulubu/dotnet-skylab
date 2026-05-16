@@ -1,4 +1,6 @@
 using Skylab.Forms.Infrastructure.Storage;
+using Skylab.Forms.Infrastructure.Storage.Repositories;
+using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Services;
 using Skylab.Feedbacks.Infrastructure.Storage;
 using Skylab.Feedbacks.Application.Services;
@@ -55,6 +57,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnection));
+
+builder.Services.AddScoped<IFormsDbContext>(sp => sp.GetRequiredService<FormsDbContext>());
+builder.Services.AddScoped<IFormRepository, FormRepository>();
+builder.Services.AddScoped<IFormResponseRepository, FormResponseRepository>();
+builder.Services.AddScoped<IFormsUnitOfWork, FormsUnitOfWork>();
 
 builder.Services.AddScoped<IFormService, FormService>();
 builder.Services.AddScoped<IFormResponseService, FormResponseService>();

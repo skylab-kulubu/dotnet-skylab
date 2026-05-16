@@ -2,8 +2,6 @@ using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Forms.Domain.Enums;
-using Skylab.Forms.Application.Contracts;
-using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
@@ -16,28 +14,28 @@ public partial class FormService
         if (!isOwner)
             return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Bu formu bağlamak için yetkiniz yok.");
 
-        if (parentForm.Id == childId) 
+        if (parentForm.Id == childId)
             return new ServiceResult<bool>(ServiceStatus.NotAcceptable, Message: "Form kendisine bağlanamaz.");
 
-        var childForm = await _context.Forms.Include(f => f.Collaborators).FirstOrDefaultAsync(f => f.Id == childId, ct);
-        
-        if (childForm == null) 
+        var childForm = await _forms.GetForEditWithCollaboratorsAsync(childId, ct);
+
+        if (childForm == null)
             return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "Bağlanacak alt form bulunamadı.");
 
         var isChildOwner = childForm.Collaborators.Any(c => c.UserId == userId && c.Role == CollaboratorRole.Owner);
 
-        if (!isChildOwner) 
+        if (!isChildOwner)
             return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Alt formda Owner yetkiniz olmalı.");
 
-        if (parentForm.AllowAnonymousResponses) 
+        if (parentForm.AllowAnonymousResponses)
             return new ServiceResult<bool>(ServiceStatus.NotAcceptable, Message: "Anonim formlar bağlanamaz.");
 
-        if (childForm.LinkedFormId.HasValue) 
+        if (childForm.LinkedFormId.HasValue)
             return new ServiceResult<bool>(ServiceStatus.NotAcceptable, Message: "Seçilen form zaten başka bir formun alt formu.");
 
-        var isChildAlreadyLinked = await _context.Forms.AnyAsync(f => f.LinkedFormId == childId && f.Id != parentForm.Id, ct);
+        var isChildAlreadyLinked = await _forms.IsLinkedByAnotherFormAsync(childId, parentForm.Id, ct);
 
-        if (isChildAlreadyLinked) 
+        if (isChildAlreadyLinked)
             return new ServiceResult<bool>(ServiceStatus.NotAcceptable, Message: "Bu form zaten başka bir form tarafından kullanılıyor.");
 
         parentForm.LinkedFormId = childId;
@@ -61,7 +59,7 @@ public partial class FormService
 
         if (parentForm.LinkedFormId.HasValue)
         {
-            var childForm = await _context.Forms.Include(f => f.Collaborators).FirstOrDefaultAsync(f => f.Id == parentForm.LinkedFormId.Value, ct);
+            var childForm = await _forms.GetForEditWithCollaboratorsAsync(parentForm.LinkedFormId.Value, ct);
 
             if (childForm != null)
             {

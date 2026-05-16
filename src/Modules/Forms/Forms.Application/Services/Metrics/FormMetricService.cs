@@ -1,19 +1,19 @@
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
-using Skylab.Forms.Domain.Enums;
+using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts.Metrics;
-using Skylab.Forms.Infrastructure.Storage;
+using Skylab.Forms.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class FormMetricService : IFormMetricService
 {
-    private readonly FormsDbContext _context;
+    private readonly IFormsDbContext _context;
     private readonly ICurrentUserService _currentUserService;
 
-    public FormMetricService(FormsDbContext context, ICurrentUserService currentUserService)
+    public FormMetricService(IFormsDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
         _currentUserService = currentUserService;

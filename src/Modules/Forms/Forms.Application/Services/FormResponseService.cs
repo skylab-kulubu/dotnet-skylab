@@ -3,25 +3,25 @@ using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Exports.Application.Contracts;
 using Skylab.Exports.Application.Services;
+using Skylab.Forms.Application.Abstractions.Storage;
+using Skylab.Forms.Application.Contracts;
+using Skylab.Forms.Application.Contracts.Responses;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Forms.Domain.Enums;
 using Skylab.Forms.Domain.Models;
-using Skylab.Forms.Infrastructure.Storage;
-using Skylab.Forms.Application.Contracts;
 using Skylab.Shared.Application.Contracts.Auth;
-using Skylab.Forms.Application.Contracts.Responses;
 using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class FormResponseService : IFormResponseService
 {
-    private readonly FormsDbContext _context;
+    private readonly IFormsDbContext _context;
     private readonly IExternalUserService _userService;
     private readonly IExcelService _excelService;
     private readonly IFormDraftService _draftService;
 
-    public FormResponseService(FormsDbContext context, IExternalUserService userService, IExcelService excelService, IFormDraftService draftService)
+    public FormResponseService(IFormsDbContext context, IExternalUserService userService, IExcelService excelService, IFormDraftService draftService)
     {
         _context = context;
         _userService = userService;

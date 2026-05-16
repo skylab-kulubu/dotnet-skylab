@@ -19,7 +19,6 @@
     <ProjectReference Include="..\..\..\Shared\Skylab.Shared.Application\Skylab.Shared.Application.csproj" />
     <ProjectReference Include="..\..\..\Shared\Skylab.Shared.Infrastructure\Skylab.Shared.Infrastructure.csproj" />
     <ProjectReference Include="..\Forms.Domain\Forms.Domain.csproj" />
-    <ProjectReference Include="..\Forms.Infrastructure\Forms.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Exports\Exports.Application\Exports.Application.csproj" />
   </ItemGroup>
 

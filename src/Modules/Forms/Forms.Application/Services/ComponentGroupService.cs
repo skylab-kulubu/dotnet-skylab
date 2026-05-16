@@ -1,87 +1,56 @@
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
-using Skylab.Forms.Domain.Entities;
-using Skylab.Forms.Infrastructure.Storage;
-using Microsoft.EntityFrameworkCore;
+using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.ComponentGroup;
+using Skylab.Forms.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class ComponentGroupService : IComponentGroupService
 {
-    private readonly FormsDbContext _context;
+    private readonly IFormsDbContext _context;
 
-    public ComponentGroupService(FormsDbContext context)
+    public ComponentGroupService(IFormsDbContext context)
     {
         _context = context;
     }
 
     public async Task<ServiceResult<ComponentGroupContract>> CreateGroupAsync(ComponentGroupUpsertRequest request, Guid userId, CancellationToken cancellationToken = default)
     {
-        var strategy = _context.Database.CreateExecutionStrategy();
-
-        return await strategy.ExecuteAsync(async () =>
+        var newGroup = new ComponentGroup
         {
-            using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                var newGroup = new ComponentGroup
-                {
-                    Id = Guid.NewGuid(),
-                    Title = request.Title,
-                    Description = request.Description,
-                    Schema = request.Schema ?? new(),
-                    OwnedBy = userId
-                };
+            Id = Guid.NewGuid(),
+            Title = request.Title,
+            Description = request.Description,
+            Schema = request.Schema ?? new(),
+            OwnedBy = userId
+        };
 
-                _context.ComponentGroups.Add(newGroup);
+        _context.ComponentGroups.Add(newGroup);
+        await _context.SaveChangesAsync(cancellationToken);
 
-                await _context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-
-                return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(newGroup));
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-        });
+        return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(newGroup));
     }
 
     public async Task<ServiceResult<ComponentGroupContract>> UpdateGroupAsync(Guid id, ComponentGroupUpsertRequest request, Guid userId, CancellationToken cancellationToken = default)
     {
-        var strategy = _context.Database.CreateExecutionStrategy();
+        var existingGroup = await _context.ComponentGroups.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
 
-        return await strategy.ExecuteAsync(async () =>
-        {
-            using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            try
-            {
-                var existingGroup = await _context.ComponentGroups.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
+        if (existingGroup == null)
+            return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotFound, Message: "Grup bulunamadı.");
 
-                if (existingGroup == null)
-                    return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotFound, Message: "Grup bulunamadı.");
+        if (existingGroup.OwnedBy != userId)
+            return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotAuthorized, Message: "Bu grubu düzenleme yetkiniz yok.");
 
-                if (existingGroup.OwnedBy != userId)
-                    return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotAuthorized, Message: "Bu grubu düzenleme yetkiniz yok.");
+        existingGroup.Title = request.Title;
+        existingGroup.Description = request.Description;
+        existingGroup.Schema = request.Schema ?? new();
 
-                existingGroup.Title = request.Title;
-                existingGroup.Description = request.Description;
-                existingGroup.Schema = request.Schema ?? new();
+        await _context.SaveChangesAsync(cancellationToken);
 
-                await _context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-
-                return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(existingGroup));
-            }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync(cancellationToken);
-                throw;
-            }
-        });
+        return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(existingGroup));
     }
 
     public async Task<ServiceResult<PagedResult<ComponentGroupContract>>> GetUserGroupsAsync(Guid userId, GetComponentGroupsRequest request, CancellationToken cancellationToken = default)
@@ -89,7 +58,10 @@ public class ComponentGroupService : IComponentGroupService
         var query = _context.ComponentGroups.AsNoTracking().Where(g => g.OwnedBy == userId);
 
         if (!string.IsNullOrWhiteSpace(request.Search))
-            query = query.Where(g => EF.Functions.ILike(g.Title, $"%{request.Search.Trim()}%"));
+        {
+            var searchTerm = request.Search.Trim().ToLower();
+            query = query.Where(g => g.Title.ToLower().Contains(searchTerm));
+        }
 
         if (request.SortDirection?.ToLower() == "ascending")
             query = query.OrderBy(g => g.CreatedAt);

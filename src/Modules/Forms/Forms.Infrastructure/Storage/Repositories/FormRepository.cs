@@ -1,0 +1,193 @@
+using Microsoft.EntityFrameworkCore;
+using Skylab.Forms.Application.Abstractions.Storage;
+using Skylab.Forms.Application.Contracts.Forms;
+using Skylab.Forms.Domain.Entities;
+using Skylab.Forms.Domain.Enums;
+using Skylab.Shared.Application.Contracts;
+
+namespace Skylab.Forms.Infrastructure.Storage.Repositories;
+
+public sealed class FormRepository : IFormRepository
+{
+    private readonly FormsDbContext _context;
+
+    public FormRepository(FormsDbContext context)
+    {
+        _context = context;
+    }
+
+    public Task<Form?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, ct);
+
+    public Task<Form?> GetWithCollaboratorsAsync(Guid id, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking()
+            .Include(f => f.Collaborators)
+            .FirstOrDefaultAsync(f => f.Id == id, ct);
+
+    public Task<Form?> GetWithDetailsAsync(Guid id, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking()
+            .Include(f => f.Collaborators)
+            .Include(f => f.LinkedForm)
+            .FirstOrDefaultAsync(f => f.Id == id, ct);
+
+    public Task<Form?> GetParentOfAsync(Guid childFormId, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.LinkedFormId == childFormId, ct);
+
+    public Task<bool> IsChildFormAsync(Guid formId, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking().AnyAsync(f => f.LinkedFormId == formId, ct);
+
+    public Task<Form?> GetForEditWithCollaboratorsAsync(Guid id, CancellationToken ct = default) =>
+        _context.Forms
+            .Include(f => f.Collaborators)
+            .FirstOrDefaultAsync(f => f.Id == id, ct);
+
+    public Task<Form?> GetForEditWithDetailsAsync(Guid id, CancellationToken ct = default) =>
+        _context.Forms
+            .Include(f => f.Collaborators)
+            .Include(f => f.LinkedForm)
+            .FirstOrDefaultAsync(f => f.Id == id, ct);
+
+    public Task<Form?> GetForEditOwnedByAsync(Guid id, Guid ownerId, CancellationToken ct = default) =>
+        _context.Forms
+            .Where(f => f.Id == id)
+            .Where(f => f.Collaborators.Any(c => c.UserId == ownerId && c.Role == CollaboratorRole.Owner))
+            .FirstOrDefaultAsync(ct);
+
+    public Task<Form?> GetParentOfForEditAsync(Guid childFormId, CancellationToken ct = default) =>
+        _context.Forms.FirstOrDefaultAsync(f => f.LinkedFormId == childFormId, ct);
+
+    public Task<bool> IsLinkedByAnotherFormAsync(Guid childFormId, Guid excludingParentFormId, CancellationToken ct = default) =>
+        _context.Forms.AnyAsync(f => f.LinkedFormId == childFormId && f.Id != excludingParentFormId, ct);
+
+    public async Task<PagedResult<FormSummaryContract>> GetUserFormsAsync(Guid userId, GetUserFormsRequest request, CancellationToken ct = default)
+    {
+        var query = _context.Forms.AsNoTracking()
+            .Include(f => f.LinkedForm)
+            .Where(f => f.Status != FormStatus.Deleted);
+
+        query = request.Role.HasValue
+            ? query.Where(f => f.Collaborators.Any(c => c.UserId == userId && c.Role == request.Role.Value))
+            : query.Where(f => f.Collaborators.Any(c => c.UserId == userId));
+
+        // Bir başka formun child'ı olan formları gizle (kullanıcı sadece parent ya da bağımsız formları görür)
+        query = query.Where(f => !_context.Forms.Any(parent => parent.LinkedFormId == f.Id && parent.Status != FormStatus.Deleted));
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+            query = query.Where(f => EF.Functions.ILike(f.Title, $"%{request.Search.Trim()}%"));
+
+        if (request.AllowAnonymous.HasValue)
+            query = query.Where(f => f.AllowAnonymousResponses == request.AllowAnonymous.Value);
+
+        if (request.AllowMultiple.HasValue)
+            query = query.Where(f => f.AllowMultipleResponses == request.AllowMultiple.Value);
+
+        if (request.RequiresManualReview.HasValue)
+            query = query.Where(f => f.RequiresManualReview == request.RequiresManualReview.Value);
+
+        if (request.HasLinkedForm.HasValue)
+        {
+            query = request.HasLinkedForm.Value
+                ? query.Where(f => f.LinkedFormId != null)
+                : query.Where(f => f.LinkedFormId == null);
+        }
+
+        query = request.SortDirection?.ToLower() == "ascending"
+            ? query.OrderBy(f => f.UpdatedAt ?? f.CreatedAt)
+            : query.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt);
+
+        var totalCount = await query.CountAsync(ct);
+
+        var forms = await query
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(f => new FormSummaryContract(
+                f.Id,
+                f.Title,
+                f.Status,
+                f.LinkedForm != null ? new LinkedFormContract(f.LinkedForm.Id, f.LinkedForm.Title) : null,
+                f.Collaborators.FirstOrDefault(c => c.UserId == userId)!.Role,
+                f.AllowAnonymousResponses,
+                f.AllowMultipleResponses,
+                f.RequiresManualReview,
+                f.UpdatedAt ?? f.CreatedAt,
+                f.Responses.Count()
+            ))
+            .ToListAsync(ct);
+
+        return new PagedResult<FormSummaryContract>(forms, totalCount, request.Page, request.PageSize);
+    }
+
+    public async Task<PagedResult<FormAllSummaryProjection>> GetAllFormsAsync(GetAllFormsRequest request, CancellationToken ct = default)
+    {
+        var query = _context.Forms.AsNoTracking()
+            .Include(f => f.LinkedForm)
+            .Where(f => f.Status != FormStatus.Deleted);
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+            query = query.Where(f => EF.Functions.ILike(f.Title, $"%{request.Search.Trim()}%"));
+
+        if (request.AllowAnonymous.HasValue)
+            query = query.Where(f => f.AllowAnonymousResponses == request.AllowAnonymous.Value);
+
+        if (request.AllowMultiple.HasValue)
+            query = query.Where(f => f.AllowMultipleResponses == request.AllowMultiple.Value);
+
+        if (request.RequiresManualReview.HasValue)
+            query = query.Where(f => f.RequiresManualReview == request.RequiresManualReview.Value);
+
+        if (request.HasLinkedForm.HasValue)
+        {
+            query = request.HasLinkedForm.Value
+                ? query.Where(f => f.LinkedFormId != null)
+                : query.Where(f => f.LinkedFormId == null);
+        }
+
+        query = request.SortDirection?.ToLower() == "ascending"
+            ? query.OrderBy(f => f.UpdatedAt ?? f.CreatedAt)
+            : query.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt);
+
+        var totalCount = await query.CountAsync(ct);
+
+        var items = await query
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .Select(f => new FormAllSummaryProjection(
+                f.Id,
+                f.Title,
+                f.Status,
+                f.LinkedForm != null ? new LinkedFormContract(f.LinkedForm.Id, f.LinkedForm.Title) : null,
+                f.Collaborators.Where(c => c.Role == CollaboratorRole.Owner).Select(c => c.UserId).FirstOrDefault(),
+                f.AllowAnonymousResponses,
+                f.AllowMultipleResponses,
+                f.RequiresManualReview,
+                f.CreatedAt,
+                f.UpdatedAt,
+                f.Responses.Count()
+            ))
+            .ToListAsync(ct);
+
+        return new PagedResult<FormAllSummaryProjection>(items, totalCount, request.Page, request.PageSize);
+    }
+
+    public async Task<List<LinkableFormsContract>> GetLinkableFormsAsync(Guid currentFormId, Guid userId, CancellationToken ct = default)
+    {
+        var alreadyLinkedFormIds = await _context.Forms.AsNoTracking()
+            .Where(f => f.Id != currentFormId)
+            .Where(f => f.LinkedFormId != null && f.Status != FormStatus.Deleted)
+            .Select(f => f.LinkedFormId)
+            .ToListAsync(ct);
+
+        return await _context.Forms.AsNoTracking()
+            .Include(f => f.Collaborators)
+            .Where(f => f.Collaborators.Any(c => c.UserId == userId && c.Role == CollaboratorRole.Owner))
+            .Where(f => f.Id != currentFormId)
+            .Where(f => f.Status != FormStatus.Deleted)
+            .Where(f => f.LinkedFormId == null)
+            .Where(f => !alreadyLinkedFormIds.Contains(f.Id))
+            .OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt)
+            .Select(f => new LinkableFormsContract(f.Id, f.Title))
+            .ToListAsync(ct);
+    }
+
+    public void Add(Form form) => _context.Forms.Add(form);
+}
