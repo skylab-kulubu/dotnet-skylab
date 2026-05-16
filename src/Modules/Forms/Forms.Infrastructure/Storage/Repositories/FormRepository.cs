@@ -36,6 +36,10 @@ public sealed class FormRepository : IFormRepository
     public Task<bool> IsChildFormAsync(Guid formId, CancellationToken ct = default) =>
         _context.Forms.AsNoTracking().AnyAsync(f => f.LinkedFormId == formId, ct);
 
+    public Task<bool> IsUserCollaboratorAsync(Guid formId, Guid userId, CancellationToken ct = default) =>
+        _context.Collaborators.AsNoTracking()
+            .AnyAsync(c => c.FormId == formId && c.UserId == userId && c.Role != CollaboratorRole.None, ct);
+
     public Task<Form?> GetForEditWithCollaboratorsAsync(Guid id, CancellationToken ct = default) =>
         _context.Forms
             .Include(f => f.Collaborators)
@@ -69,7 +73,6 @@ public sealed class FormRepository : IFormRepository
             ? query.Where(f => f.Collaborators.Any(c => c.UserId == userId && c.Role == request.Role.Value))
             : query.Where(f => f.Collaborators.Any(c => c.UserId == userId));
 
-        // Bir başka formun child'ı olan formları gizle (kullanıcı sadece parent ya da bağımsız formları görür)
         query = query.Where(f => !_context.Forms.Any(parent => parent.LinkedFormId == f.Id && parent.Status != FormStatus.Deleted));
 
         if (!string.IsNullOrWhiteSpace(request.Search))

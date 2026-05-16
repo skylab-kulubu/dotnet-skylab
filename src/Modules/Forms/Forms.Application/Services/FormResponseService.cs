@@ -1,4 +1,5 @@
 using Skylab.Shared.Application.Contracts;
+using Skylab.Shared.Application.Contracts.Auth;
 using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Exports.Application.Contracts;
@@ -9,21 +10,29 @@ using Skylab.Forms.Application.Contracts.Responses;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Forms.Domain.Enums;
 using Skylab.Forms.Domain.Models;
-using Skylab.Shared.Application.Contracts.Auth;
-using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class FormResponseService : IFormResponseService
 {
-    private readonly IFormsDbContext _context;
+    private readonly IFormRepository _forms;
+    private readonly IFormResponseRepository _responses;
+    private readonly IFormsUnitOfWork _uow;
     private readonly IExternalUserService _userService;
     private readonly IExcelService _excelService;
     private readonly IFormDraftService _draftService;
 
-    public FormResponseService(IFormsDbContext context, IExternalUserService userService, IExcelService excelService, IFormDraftService draftService)
+    public FormResponseService(
+        IFormRepository forms,
+        IFormResponseRepository responses,
+        IFormsUnitOfWork uow,
+        IExternalUserService userService,
+        IExcelService excelService,
+        IFormDraftService draftService)
     {
-        _context = context;
+        _forms = forms;
+        _responses = responses;
+        _uow = uow;
         _userService = userService;
         _excelService = excelService;
         _draftService = draftService;
@@ -31,7 +40,7 @@ public class FormResponseService : IFormResponseService
 
     public async Task<ServiceResult<ResponseSubmitResult>> SubmitResponseAsync(ResponseSubmitRequest contract, Guid? userId, CancellationToken cancellationToken = default)
     {
-        var form = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.Id == contract.FormId, cancellationToken);
+        var form = await _forms.GetByIdAsync(contract.FormId, cancellationToken);
         if (form == null) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
         if (form.Status != FormStatus.Open) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Form kapalı.");
 
@@ -39,15 +48,15 @@ public class FormResponseService : IFormResponseService
 
         if (userId.HasValue && !form.AllowMultipleResponses)
         {
-            var hasExistingResponse = await _context.Responses.AnyAsync(r => r.FormId == form.Id && r.UserId == userId && !r.IsArchived, cancellationToken);
+            var hasExistingResponse = await _responses.HasNonArchivedResponseAsync(form.Id, userId.Value, cancellationToken);
             if (hasExistingResponse) return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Bu formu daha önce doldurdunuz.");
         }
 
-        var parentForm = await _context.Forms.AsNoTracking().FirstOrDefaultAsync(f => f.LinkedFormId == form.Id, cancellationToken);
+        var parentForm = await _forms.GetParentOfAsync(form.Id, cancellationToken);
 
         if (parentForm != null && userId.HasValue)
         {
-            var parentResponse = await _context.Responses.Where(r => r.FormId == parentForm.Id && r.UserId == userId && !r.IsArchived).OrderByDescending(r => r.SubmittedAt).FirstOrDefaultAsync(cancellationToken);
+            var parentResponse = await _responses.GetLatestForUserAsync(parentForm.Id, userId.Value, cancellationToken);
 
             if (parentResponse == null)
                 return new ServiceResult<ResponseSubmitResult>(ServiceStatus.RequiresParentApproval, Message: "Bu formu doldurmak için önceki aşamayı doldurmanız gerekmektedir.");
@@ -57,19 +66,17 @@ public class FormResponseService : IFormResponseService
 
             if (form.AllowMultipleResponses)
             {
-                var lastChildResponse = await _context.Responses
-                    .Where(r => r.FormId == form.Id && r.UserId == userId && !r.IsArchived)
-                    .OrderByDescending(r => r.SubmittedAt)
-                    .FirstOrDefaultAsync(cancellationToken);
+                var lastChildResponse = await _responses.GetLatestForUserAsync(form.Id, userId.Value, cancellationToken);
 
                 if (lastChildResponse != null && parentResponse.SubmittedAt <= lastChildResponse.SubmittedAt)
                     return new ServiceResult<ResponseSubmitResult>(ServiceStatus.NotAcceptable, Message: "Yeni bir yanıt göndermek için önceki aşamayı tekrar doldurmanız gerekmektedir.");
             }
         }
+
         var response = MapToEntity(form, contract.Responses, contract.TimeSpent, userId);
 
-        _context.Responses.Add(response);
-        await _context.SaveChangesAsync(cancellationToken);
+        _responses.Add(response);
+        await _uow.SaveChangesAsync(cancellationToken);
 
         if (userId.HasValue)
         {
@@ -112,62 +119,21 @@ public class FormResponseService : IFormResponseService
         var result = new ResponseSubmitResult(response.Id, form.LinkedFormId, step);
         return new ServiceResult<ResponseSubmitResult>(status, Data: result, Message: message);
     }
+
     public async Task<ServiceResult<FormResponsesListResult>> GetFormResponsesAsync(Guid formId, Guid userId, GetResponsesRequest request, CancellationToken cancellationToken = default)
     {
-        var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
-
+        var isAuthorized = await _forms.IsUserCollaboratorAsync(formId, userId, cancellationToken);
         if (!isAuthorized) return new ServiceResult<FormResponsesListResult>(ServiceStatus.NotAuthorized, Message: "Bu formun yanıtlarını görüntüleme yetkiniz yok.");
 
-        var query = _context.Responses.AsNoTracking().Where(r => r.FormId == formId);
+        var paged = await _responses.GetPagedAsync(formId, request, cancellationToken);
 
-        bool showArchived = request.ShowArchived.GetValueOrDefault(false);
-
-        if (showArchived) { query = query.Where(r => r.IsArchived == true); }
-        else { query = query.Where(r => r.IsArchived == false); }
-
-        if (request.Status.HasValue) { query = query.Where(r => r.Status == request.Status.Value); }
-
-        switch (request.ResponderType)
-        {
-            case FormResponderType.Registered:
-                query = query.Where(r => r.UserId != null);
-                break;
-            case FormResponderType.Anonymous:
-                query = query.Where(r => r.UserId == null);
-                break;
-            case FormResponderType.All:
-            default:
-                break;
-        }
-
-        if (request.FilterByUserId.HasValue)
-            query = query.Where(r => r.UserId == request.FilterByUserId.Value);
-
-        if (request.SortingDirection == "ascending") { query = query.OrderBy(r => r.SubmittedAt); }
-        else { query = query.OrderByDescending(r => r.SubmittedAt); }
-
-
-        var totalResponseCount = await query.CountAsync(cancellationToken);
-        var averageTimeSpent = await query.AverageAsync(r => r.TimeSpent, cancellationToken);
-
-        var items = await query.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize)
-            .Select(r => new
-            {
-                r.Id,
-                r.UserId,
-                r.Status,
-                r.IsArchived,
-                r.ReviewedBy,
-                r.ArchivedBy,
-                r.SubmittedAt,
-                r.ReviewedAt,
-                r.ArchivedAt
-            }).ToListAsync(cancellationToken);
-
-        var userIds = items.Where(r => r.UserId.HasValue).Select(r => r.UserId!.Value).Distinct().ToList();
+        var userIds = paged.Items.Where(r => r.UserId.HasValue).Select(r => r.UserId!.Value)
+            .Concat(paged.Items.Where(r => r.ReviewedBy.HasValue).Select(r => r.ReviewedBy!.Value))
+            .Distinct()
+            .ToList();
         var users = await _userService.GetUsersAsync(userIds, cancellationToken);
 
-        var mappedItems = items.Select(r =>
+        var mappedItems = paged.Items.Select(r =>
         {
             var userDetail = r.UserId.HasValue ? users.FirstOrDefault(u => u.Id == r.UserId) : null;
             var reviewerDetail = r.ReviewedBy.HasValue ? users.FirstOrDefault(u => u.Id == r.ReviewedBy) : null;
@@ -183,23 +149,24 @@ public class FormResponseService : IFormResponseService
 
         var resultData = new PagedResult<ResponseSummaryContract>(
             mappedItems,
-            totalResponseCount,
+            paged.TotalCount,
             request.Page,
             request.PageSize
         );
 
-        var finalResult = new FormResponsesListResult(resultData, averageTimeSpent);
+        var finalResult = new FormResponsesListResult(resultData, paged.AverageTimeSpent);
 
         return new ServiceResult<FormResponsesListResult>(ServiceStatus.Success, Data: finalResult);
     }
+
     public async Task<ServiceResult<ResponseContract>> GetResponseByIdAsync(Guid responseId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var response = await _context.Responses.AsNoTracking().Include(r => r.Form).ThenInclude(f => f.Collaborators).FirstOrDefaultAsync(r => r.Id == responseId, cancellationToken);
+        var response = await _responses.GetByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
 
         if (response == null)
             return new ServiceResult<ResponseContract>(ServiceStatus.NotFound, Message: "Yanıt bulunamadı.");
 
-        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == userId && (c.Role != CollaboratorRole.None));
+        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
 
         if (!isAuthorized)
             return new ServiceResult<ResponseContract>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı görüntüleme yetkiniz yok.");
@@ -214,15 +181,11 @@ public class FormResponseService : IFormResponseService
         }
         else
         {
-            var parentFormId = await _context.Forms.AsNoTracking()
-                .Where(f => f.LinkedFormId == response.FormId)
-                .Select(f => f.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (parentFormId != Guid.Empty)
+            var parentForm = await _forms.GetParentOfAsync(response.FormId, cancellationToken);
+            if (parentForm != null)
             {
                 relationshipStatus = FormRelationshipStatus.Child;
-                targetLinkedFormId = parentFormId;
+                targetLinkedFormId = parentForm.Id;
             }
         }
 
@@ -230,22 +193,9 @@ public class FormResponseService : IFormResponseService
 
         if (targetLinkedFormId.HasValue && response.UserId.HasValue)
         {
-            if (relationshipStatus == FormRelationshipStatus.Parent)
-            {
-                linkedResponseId = await _context.Responses.AsNoTracking()
-                    .Where(r => r.FormId == targetLinkedFormId.Value && r.UserId == response.UserId && r.SubmittedAt >= response.SubmittedAt)
-                    .OrderBy(r => r.SubmittedAt)
-                    .Select(r => (Guid?)r.Id)
-                    .FirstOrDefaultAsync(cancellationToken);
-            }
-            else
-            {
-                linkedResponseId = await _context.Responses.AsNoTracking()
-                    .Where(r => r.FormId == targetLinkedFormId.Value && r.UserId == response.UserId && r.SubmittedAt <= response.SubmittedAt)
-                    .OrderByDescending(r => r.SubmittedAt)
-                    .Select(r => (Guid?)r.Id)
-                    .FirstOrDefaultAsync(cancellationToken);
-            }
+            linkedResponseId = relationshipStatus == FormRelationshipStatus.Parent
+                ? await _responses.GetFirstChildResponseIdAsync(targetLinkedFormId.Value, response.UserId.Value, response.SubmittedAt, cancellationToken)
+                : await _responses.GetLatestParentResponseIdAsync(targetLinkedFormId.Value, response.UserId.Value, response.SubmittedAt, cancellationToken);
         }
 
         var userIds = new List<Guid>();
@@ -264,14 +214,15 @@ public class FormResponseService : IFormResponseService
             Data: MapToDetailContract(response, relationshipStatus, linkedResponseId, responderUser, reviewerUser, archiverUser)
         );
     }
+
     public async Task<ServiceResult<bool>> UpdateResponseStatusAsync(ResponseStatusUpdateRequest contract, Guid reviewerId, CancellationToken cancellationToken = default)
     {
-        var response = await _context.Responses.Include(r => r.Form).ThenInclude(f => f.Collaborators).FirstOrDefaultAsync(r => r.Id == contract.ResponseId, cancellationToken);
+        var response = await _responses.GetForEditByIdWithFormAndCollaboratorsAsync(contract.ResponseId, cancellationToken);
 
         if (response == null)
             return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "İlgili yanıt bulunamadı.");
 
-        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == reviewerId && (c.Role != CollaboratorRole.None));
+        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == reviewerId && c.Role != CollaboratorRole.None);
 
         if (!isAuthorized)
             return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı onaylama veya reddetme yetkiniz yok.");
@@ -284,18 +235,19 @@ public class FormResponseService : IFormResponseService
         response.ReviewNote = contract.Note;
         response.ReviewedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await _uow.SaveChangesAsync(cancellationToken);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt durumu başarıyla güncellendi.");
     }
+
     public async Task<ServiceResult<bool>> ArchiveResponseAsync(Guid responseId, Guid archiverId, CancellationToken cancellationToken = default)
     {
-        var response = await _context.Responses.Include(r => r.Form).ThenInclude(f => f.Collaborators).FirstOrDefaultAsync(r => r.Id == responseId, cancellationToken);
+        var response = await _responses.GetForEditByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
 
         if (response == null)
             return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "İlgili yanıt bulunamadı.");
 
-        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == archiverId && (c.Role != CollaboratorRole.None));
+        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == archiverId && c.Role != CollaboratorRole.None);
 
         if (!isAuthorized)
             return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı arşivleme yetkiniz yok.");
@@ -315,12 +267,13 @@ public class FormResponseService : IFormResponseService
         response.ArchivedBy = archiverId;
         response.ArchivedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await _uow.SaveChangesAsync(cancellationToken);
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt başarıyla arşivlendi.");
     }
+
     public async Task<ServiceResult<byte[]>> ExportResponsesToExcelAsync(Guid formId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var form = await _context.Forms.AsNoTracking().Include(f => f.Collaborators).Include(f => f.Responses.Where(r => !r.IsArchived)).FirstOrDefaultAsync(f => f.Id == formId, cancellationToken);
+        var form = await _forms.GetWithCollaboratorsAsync(formId, cancellationToken);
 
         if (form == null)
             return new ServiceResult<byte[]>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
@@ -328,6 +281,8 @@ public class FormResponseService : IFormResponseService
         var isAuthorized = form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
         if (!isAuthorized)
             return new ServiceResult<byte[]>(ServiceStatus.NotAuthorized, Message: "Bu formun yanıtlarını dışa aktarma yetkiniz yok.");
+
+        var responses = await _responses.GetNonArchivedByFormAsync(formId, cancellationToken);
 
         var headers = new List<string>
         {
@@ -343,11 +298,10 @@ public class FormResponseService : IFormResponseService
             string questionText = schemaItem.Props.TryGetValue("question", out var qVal) ? qVal?.ToString() ?? "İsimsiz Soru" : "Soru";
             headers.Add(questionText);
         }
-        ;
 
         var rows = new List<List<string>>();
 
-        foreach (var response in form.Responses.OrderBy(r => r.SubmittedAt))
+        foreach (var response in responses)
         {
             var row = new List<string>
             {
@@ -372,6 +326,7 @@ public class FormResponseService : IFormResponseService
         var exportRequest = new ExcelExportRequest(sheetName, headers, rows);
         return _excelService.GenerateExcel(exportRequest);
     }
+
     private static FormResponse MapToEntity(Form form, List<FormResponseSchemaItem> userResponses, int? timeSpent, Guid? userId)
     {
         var responseData = new List<FormResponseSchemaItem>();
@@ -402,6 +357,7 @@ public class FormResponseService : IFormResponseService
             SubmittedAt = DateTime.UtcNow
         };
     }
+
     private static ResponseContract MapToDetailContract(FormResponse response, FormRelationshipStatus relationshipStatus, Guid? linkedResponseId, UserContract? responderUser, UserContract? reviewerUser, UserContract? archiverUser)
     {
         return new ResponseContract(
