@@ -1,4 +1,4 @@
-namespace Skylab.Shared.Infrastructure.Caching;
+namespace Skylab.Shared.Application.Caching;
 
 public interface ICacheService
 {

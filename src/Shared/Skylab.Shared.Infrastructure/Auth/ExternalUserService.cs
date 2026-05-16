@@ -1,10 +1,11 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using Skylab.Shared.Domain.Entities;
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Application.Contracts.Auth;
+using Skylab.Shared.Application.Services;
+using Skylab.Shared.Domain.Entities;
 
-namespace Skylab.Shared.Application.Services;
+namespace Skylab.Shared.Infrastructure.Auth;
 
 public class ExternalUserService : IExternalUserService
 {

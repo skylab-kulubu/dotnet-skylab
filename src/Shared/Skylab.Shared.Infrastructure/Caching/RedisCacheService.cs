@@ -1,5 +1,6 @@
 using StackExchange.Redis;
 using System.Text.Json;
+using Skylab.Shared.Application.Caching;
 
 namespace Skylab.Shared.Infrastructure.Caching;
 

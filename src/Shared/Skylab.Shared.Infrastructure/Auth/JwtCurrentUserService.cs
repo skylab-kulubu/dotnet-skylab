@@ -1,8 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.IdentityModel.JsonWebTokens;
+using Skylab.Shared.Application.Services;
 
-namespace Skylab.Shared.Application.Services;
+namespace Skylab.Shared.Infrastructure.Auth;
 
 public class JwtCurrentUserService(IHttpContextAccessor httpContextAccessor) : ICurrentUserService
 {

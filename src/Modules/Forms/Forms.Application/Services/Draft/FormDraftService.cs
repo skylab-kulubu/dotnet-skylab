@@ -1,4 +1,4 @@
-using Skylab.Shared.Infrastructure.Caching;
+using Skylab.Shared.Application.Caching;
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Application.Abstractions.Storage;
