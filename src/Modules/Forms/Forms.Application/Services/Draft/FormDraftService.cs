@@ -3,41 +3,37 @@ using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts.Draft;
-using Skylab.Forms.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class FormDraftService : IFormDraftService
 {
     private readonly ICacheService _cache;
-    private readonly IFormsDbContext _context;
+    private readonly IFormRepository _forms;
 
     private static readonly TimeSpan ResponseDraftTtl = TimeSpan.FromHours(24);
     private static readonly TimeSpan FormDraftTtl = TimeSpan.FromHours(48);
 
-    public FormDraftService(ICacheService cache, IFormsDbContext context)
+    public FormDraftService(ICacheService cache, IFormRepository forms)
     {
         _cache = cache;
-        _context = context;
+        _forms = forms;
     }
 
     public async Task<ServiceResult<bool>> SaveResponseDraftAsync(Guid formId, Guid userId, ResponseDraftRequest draft, CancellationToken ct)
     {
-        var form = await _context.Forms.AsNoTracking().Select(f => new { f.Id, f.Status }).FirstOrDefaultAsync(f => f.Id == formId, ct);
-
-        if (form == null || form.Status != FormStatus.Open)
+        if (!await _forms.IsFormOpenAsync(formId, ct))
             return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
         var key = $"forms:draft:response:{formId}:{userId}";
-        await _cache.SetAsync(key, draft,ResponseDraftTtl, ct);
+        await _cache.SetAsync(key, draft, ResponseDraftTtl, ct);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true);
     }
     public async Task<ServiceResult<ResponseDraftRequest?>> GetResponseDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
     {
         var key = $"forms:draft:response:{formId}:{userId}";
-        
+
         var draft = await _cache.GetAsync<ResponseDraftRequest>(key, ResponseDraftTtl, ct);
 
         if (draft == null)
@@ -56,7 +52,7 @@ public class FormDraftService : IFormDraftService
     public async Task<ServiceResult<bool>> ClearResponseDraftsAsync(Guid formId, CancellationToken ct = default)
     {
         var prefix = $"forms:draft:response:{formId}:";
-        
+
         await _cache.RemoveByPrefixAsync(prefix, ct);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Forma ait tüm yanıt taslakları temizlendi.");
@@ -74,7 +70,7 @@ public class FormDraftService : IFormDraftService
     public async Task<ServiceResult<FormDraftContract?>> GetFormDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
     {
         var key = $"forms:draft:form:{formId}:{userId}";
-        
+
         var draftRequest = await _cache.GetAsync<FormDraftRequest>(key, FormDraftTtl, ct);
 
         if (draftRequest == null)
@@ -86,7 +82,7 @@ public class FormDraftService : IFormDraftService
     public async Task<ServiceResult<bool>> DeleteFormDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
     {
         var key = $"forms:draft:form:{formId}:{userId}";
-        
+
         await _cache.RemoveAsync(key, ct);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Form taslağı silindi.");
@@ -94,7 +90,7 @@ public class FormDraftService : IFormDraftService
     public async Task<ServiceResult<bool>> ClearFormDraftsAsync(Guid formId, CancellationToken ct = default)
     {
         var prefix = $"forms:draft:form:{formId}:";
-        
+
         await _cache.RemoveByPrefixAsync(prefix, ct);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Forma ait tüm düzenleme taslakları temizlendi.");

@@ -12,6 +12,8 @@ public interface IFormRepository
     Task<Form?> GetParentOfAsync(Guid childFormId, CancellationToken ct = default);
     Task<bool> IsChildFormAsync(Guid formId, CancellationToken ct = default);
     Task<bool> IsUserCollaboratorAsync(Guid formId, Guid userId, CancellationToken ct = default);
+    Task<bool> ExistsAsync(Guid formId, CancellationToken ct = default);
+    Task<bool> IsFormOpenAsync(Guid formId, CancellationToken ct = default);
 
     Task<Form?> GetForEditWithCollaboratorsAsync(Guid id, CancellationToken ct = default);
     Task<Form?> GetForEditWithDetailsAsync(Guid id, CancellationToken ct = default);

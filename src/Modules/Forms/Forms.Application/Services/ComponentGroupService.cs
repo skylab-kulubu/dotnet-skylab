@@ -4,17 +4,18 @@ using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.ComponentGroup;
 using Skylab.Forms.Domain.Entities;
-using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class ComponentGroupService : IComponentGroupService
 {
-    private readonly IFormsDbContext _context;
+    private readonly IComponentGroupRepository _groups;
+    private readonly IFormsUnitOfWork _uow;
 
-    public ComponentGroupService(IFormsDbContext context)
+    public ComponentGroupService(IComponentGroupRepository groups, IFormsUnitOfWork uow)
     {
-        _context = context;
+        _groups = groups;
+        _uow = uow;
     }
 
     public async Task<ServiceResult<ComponentGroupContract>> CreateGroupAsync(ComponentGroupUpsertRequest request, Guid userId, CancellationToken cancellationToken = default)
@@ -28,15 +29,15 @@ public class ComponentGroupService : IComponentGroupService
             OwnedBy = userId
         };
 
-        _context.ComponentGroups.Add(newGroup);
-        await _context.SaveChangesAsync(cancellationToken);
+        _groups.Add(newGroup);
+        await _uow.SaveChangesAsync(cancellationToken);
 
         return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(newGroup));
     }
 
     public async Task<ServiceResult<ComponentGroupContract>> UpdateGroupAsync(Guid id, ComponentGroupUpsertRequest request, Guid userId, CancellationToken cancellationToken = default)
     {
-        var existingGroup = await _context.ComponentGroups.FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
+        var existingGroup = await _groups.GetForEditAsync(id, cancellationToken);
 
         if (existingGroup == null)
             return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotFound, Message: "Grup bulunamadı.");
@@ -48,42 +49,20 @@ public class ComponentGroupService : IComponentGroupService
         existingGroup.Description = request.Description;
         existingGroup.Schema = request.Schema ?? new();
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await _uow.SaveChangesAsync(cancellationToken);
 
         return new ServiceResult<ComponentGroupContract>(ServiceStatus.Success, Data: MapToContract(existingGroup));
     }
 
     public async Task<ServiceResult<PagedResult<ComponentGroupContract>>> GetUserGroupsAsync(Guid userId, GetComponentGroupsRequest request, CancellationToken cancellationToken = default)
     {
-        var query = _context.ComponentGroups.AsNoTracking().Where(g => g.OwnedBy == userId);
-
-        if (!string.IsNullOrWhiteSpace(request.Search))
-        {
-            var searchTerm = request.Search.Trim().ToLower();
-            query = query.Where(g => g.Title.ToLower().Contains(searchTerm));
-        }
-
-        if (request.SortDirection?.ToLower() == "ascending")
-            query = query.OrderBy(g => g.CreatedAt);
-        else
-            query = query.OrderByDescending(g => g.CreatedAt);
-
-        var totalCount = await query.CountAsync(cancellationToken);
-
-        var groups = await query
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
-            .Select(g => new ComponentGroupContract(g.Id, g.Title, g.Description, g.Schema))
-            .ToListAsync(cancellationToken);
-
-        var result = new PagedResult<ComponentGroupContract>(groups, totalCount, request.Page, request.PageSize);
-
-        return new ServiceResult<PagedResult<ComponentGroupContract>>(ServiceStatus.Success, Data: result);
+        var data = await _groups.GetUserGroupsAsync(userId, request, cancellationToken);
+        return new ServiceResult<PagedResult<ComponentGroupContract>>(ServiceStatus.Success, Data: data);
     }
 
     public async Task<ServiceResult<ComponentGroupContract>> GetGroupByIdAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
-        var group = await _context.ComponentGroups.AsNoTracking().FirstOrDefaultAsync(g => g.Id == id, cancellationToken);
+        var group = await _groups.GetByIdAsync(id, cancellationToken);
 
         if (group == null)
             return new ServiceResult<ComponentGroupContract>(ServiceStatus.NotFound, Message: "Grup bulunamadı.");
@@ -96,19 +75,17 @@ public class ComponentGroupService : IComponentGroupService
 
     public async Task<ServiceResult<bool>> DeleteGroupAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
     {
-        var group = await _context.ComponentGroups.FirstOrDefaultAsync(g => g.Id == id && g.OwnedBy == userId, cancellationToken);
+        var group = await _groups.GetForEditAsync(id, cancellationToken);
 
-        if (group == null)
+        if (group == null || group.OwnedBy != userId)
             return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "Grup bulunamadı veya yetkiniz yok.");
 
-        _context.ComponentGroups.Remove(group);
-        await _context.SaveChangesAsync(cancellationToken);
+        _groups.Remove(group);
+        await _uow.SaveChangesAsync(cancellationToken);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Grup silindi.");
     }
 
-    private static ComponentGroupContract MapToContract(ComponentGroup group)
-    {
-        return new ComponentGroupContract(group.Id, group.Title, group.Description, group.Schema);
-    }
+    private static ComponentGroupContract MapToContract(ComponentGroup group) =>
+        new(group.Id, group.Title, group.Description, group.Schema);
 }

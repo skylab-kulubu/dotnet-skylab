@@ -3,44 +3,32 @@ using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts.Metrics;
-using Skylab.Forms.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 
 namespace Skylab.Forms.Application.Services;
 
 public class FormMetricService : IFormMetricService
 {
-    private readonly IFormsDbContext _context;
+    private readonly IFormRepository _forms;
+    private readonly IFormMetricsRepository _metrics;
     private readonly ICurrentUserService _currentUserService;
 
-    public FormMetricService(IFormsDbContext context, ICurrentUserService currentUserService)
+    public FormMetricService(IFormRepository forms, IFormMetricsRepository metrics, ICurrentUserService currentUserService)
     {
-        _context = context;
+        _forms = forms;
+        _metrics = metrics;
         _currentUserService = currentUserService;
     }
 
     public async Task<ServiceResult<FormMetricsContract>> GetFormMetricsAsync(Guid formId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var formExists = await _context.Forms.AnyAsync(f => f.Id == formId, cancellationToken);
-        if (!formExists)
+        if (!await _forms.ExistsAsync(formId, cancellationToken))
             return new ServiceResult<FormMetricsContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var isAuthorized = await _context.Collaborators.AnyAsync(c => c.FormId == formId && c.UserId == userId && (c.Role != CollaboratorRole.None), cancellationToken);
+        var isAuthorized = await _forms.IsUserCollaboratorAsync(formId, userId, cancellationToken);
         if (!isAuthorized && !await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken))
             return new ServiceResult<FormMetricsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun metriklerini görüntüleme yetkiniz yok.");
 
-        var query = _context.Responses.AsNoTracking().Where(r => r.FormId == formId);
-
-        var basicStats = await query.GroupBy(r => 1).Select(g => new
-        {
-            Total = g.Count(),
-            Pending = g.Count(r => r.Status == FormResponseStatus.Pending),
-            Approved = g.Count(r => r.Status == FormResponseStatus.Approved),
-            Rejected = g.Count(r => r.Status == FormResponseStatus.Declined),
-            AvgTime = g.Average(r => r.TimeSpent),
-            Registered = g.Count(r => r.UserId != null),
-            Anonymous = g.Count(r => r.UserId == null)
-        }).FirstOrDefaultAsync(cancellationToken);
+        var basicStats = await _metrics.GetFormBasicStatsAsync(formId, cancellationToken);
 
         var emptyDailyTrend = Enumerable.Range(0, 7).Select(offset =>
         {
@@ -66,14 +54,9 @@ public class FormMetricService : IFormMetricService
         }
 
         var now = DateTime.UtcNow;
-
         var sevenDaysAgo = now.AddDays(-7).Date;
-        var dailyData = await query
-            .Where(r => r.SubmittedAt >= sevenDaysAgo)
-            .GroupBy(r => r.SubmittedAt.Date)
-            .Select(g => new { Date = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-            
+        var dailyData = await _metrics.GetDailyResponseCountsAsync(formId, sevenDaysAgo, cancellationToken);
+
         var dailyTrend = Enumerable.Range(0, 7).Select(offset =>
         {
             var targetDate = sevenDaysAgo.AddDays(offset + 1);
@@ -87,11 +70,7 @@ public class FormMetricService : IFormMetricService
         }).ToList();
 
         var twentyFourHoursAgo = now.AddHours(-24);
-        var hourlyDataRaw = await query
-            .Where(r => r.SubmittedAt >= twentyFourHoursAgo)
-            .GroupBy(r => new { r.SubmittedAt.Date, r.SubmittedAt.Hour })
-            .Select(g => new { g.Key.Date, g.Key.Hour, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+        var hourlyDataRaw = await _metrics.GetHourlyResponseCountsAsync(formId, twentyFourHoursAgo, cancellationToken);
 
         var hourlyTrend = Enumerable.Range(0, 24).Select(offset =>
         {
@@ -123,9 +102,9 @@ public class FormMetricService : IFormMetricService
 
     public async Task<ServiceResult<ServiceMetricsContract>> GetServiceMetricsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var totalForms = await _context.Forms.CountAsync(cancellationToken);
-        var totalResponses = await _context.Responses.CountAsync(cancellationToken);
-        var pendingResponses = await _context.Responses.CountAsync(r => r.Status == FormResponseStatus.Pending && !r.IsArchived, cancellationToken);
+        var totalForms = await _metrics.GetTotalFormsCountAsync(cancellationToken);
+        var totalResponses = await _metrics.GetTotalResponsesCountAsync(cancellationToken);
+        var pendingResponses = await _metrics.GetPendingNonArchivedResponsesCountAsync(cancellationToken);
 
         var today = DateTime.UtcNow.Date;
         var diff = (7 + (today.DayOfWeek - DayOfWeek.Monday)) % 7;
@@ -134,8 +113,8 @@ public class FormMetricService : IFormMetricService
         var weeksToFetch = 8;
         var startDate = currentWeekStart.AddDays(-(weeksToFetch - 1) * 7);
 
-        var formDates = await _context.Forms.AsNoTracking().Where(f => f.CreatedAt >= startDate).Select(f => f.CreatedAt).ToListAsync(cancellationToken);
-        var responseDates = await _context.Responses.AsNoTracking().Where(r => r.SubmittedAt >= startDate).Select(r => r.SubmittedAt).ToListAsync(cancellationToken);
+        var formDates = await _metrics.GetFormCreatedDatesAsync(startDate, cancellationToken);
+        var responseDates = await _metrics.GetResponseSubmittedDatesAsync(startDate, cancellationToken);
 
         var formsWeeklyTrend = new List<TrendItemContract>();
         var responsesWeeklyTrend = new List<TrendItemContract>();
@@ -159,7 +138,7 @@ public class FormMetricService : IFormMetricService
         return new ServiceResult<ServiceMetricsContract>(ServiceStatus.Success, Data: result);
     }
 
-    private double CalculateTrendPercentageChange(List<TrendItemContract> trend)
+    private static double CalculateTrendPercentageChange(List<TrendItemContract> trend)
     {
         if (trend == null || trend.Count < 2) return 0;
 

@@ -58,9 +58,10 @@ builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnection));
 
-builder.Services.AddScoped<IFormsDbContext>(sp => sp.GetRequiredService<FormsDbContext>());
 builder.Services.AddScoped<IFormRepository, FormRepository>();
 builder.Services.AddScoped<IFormResponseRepository, FormResponseRepository>();
+builder.Services.AddScoped<IComponentGroupRepository, ComponentGroupRepository>();
+builder.Services.AddScoped<IFormMetricsRepository, FormMetricsRepository>();
 builder.Services.AddScoped<IFormsUnitOfWork, FormsUnitOfWork>();
 
 builder.Services.AddScoped<IFormService, FormService>();

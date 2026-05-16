@@ -40,6 +40,12 @@ public sealed class FormRepository : IFormRepository
         _context.Collaborators.AsNoTracking()
             .AnyAsync(c => c.FormId == formId && c.UserId == userId && c.Role != CollaboratorRole.None, ct);
 
+    public Task<bool> ExistsAsync(Guid formId, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking().AnyAsync(f => f.Id == formId, ct);
+
+    public Task<bool> IsFormOpenAsync(Guid formId, CancellationToken ct = default) =>
+        _context.Forms.AsNoTracking().AnyAsync(f => f.Id == formId && f.Status == FormStatus.Open, ct);
+
     public Task<Form?> GetForEditWithCollaboratorsAsync(Guid id, CancellationToken ct = default) =>
         _context.Forms
             .Include(f => f.Collaborators)
