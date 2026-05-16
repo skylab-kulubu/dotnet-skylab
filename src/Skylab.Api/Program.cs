@@ -3,6 +3,8 @@ using Skylab.Forms.Infrastructure.Storage.Repositories;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Services;
 using Skylab.Feedbacks.Infrastructure.Storage;
+using Skylab.Feedbacks.Infrastructure.Storage.Repositories;
+using Skylab.Feedbacks.Application.Abstractions.Storage;
 using Skylab.Feedbacks.Application.Services;
 using Skylab.Exports.Application.Services;
 using Skylab.Shared.Application.Caching;
@@ -71,6 +73,9 @@ builder.Services.AddScoped<IFormResponseService, FormResponseService>();
 builder.Services.AddScoped<IFormMetricService, FormMetricService>();
 builder.Services.AddScoped<IFormDraftService, FormDraftService>();
 builder.Services.AddScoped<IComponentGroupService, ComponentGroupService>();
+
+builder.Services.AddScoped<IFeedbackRepository, FeedbackRepository>();
+builder.Services.AddScoped<IFeedbacksUnitOfWork, FeedbacksUnitOfWork>();
 
 builder.Services.AddScoped<IFeedbackService, FeedbackService>();
 

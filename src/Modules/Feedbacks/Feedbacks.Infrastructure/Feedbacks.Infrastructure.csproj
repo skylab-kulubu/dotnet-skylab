@@ -13,7 +13,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\Skylab.Shared.Domain\Skylab.Shared.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Shared\Skylab.Shared.Application\Skylab.Shared.Application.csproj" />
     <ProjectReference Include="..\Feedbacks.Domain\Feedbacks.Domain.csproj" />
+    <ProjectReference Include="..\Feedbacks.Application\Feedbacks.Application.csproj" />
   </ItemGroup>
 
 </Project>
