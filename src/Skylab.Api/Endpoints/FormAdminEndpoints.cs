@@ -150,12 +150,30 @@ public static class FormAdminEndpoints
             return result.ToApiResult();
         });
 
-        group.MapGet("/responses/{id:guid}", async (Guid id, IFormResponseService service, ICurrentUserService userService, CancellationToken ct) =>
+        group.MapGet("/responses/{id:guid}", async (Guid id, [FromQuery] string? token, IFormResponseService service, ICurrentUserService userService, CancellationToken ct) =>
         {
             var userId = await userService.GetUserIdAsync(ct);
             if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Cevabı görmek için giriş yapmalısınız.");
 
-            var result = await service.GetResponseByIdAsync(id, userId.Value, ct);
+            var result = await service.GetResponseByIdAsync(id, userId.Value, token, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/responses/{id:guid}/share", async (Guid id, IFormResponseService service, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Cevap paylaşmak için giriş yapmalısınız.");
+
+            var result = await service.CreateOrRefreshShareTokenAsync(id, userId.Value, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/responses/{id:guid}/revoke-token", async (Guid id, IFormResponseService service, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Paylaşımı iptal etmek için giriş yapmalısınız.");
+
+            var result = await service.RevokeShareTokenAsync(id, userId.Value, ct);
             return result.ToApiResult();
         });
 

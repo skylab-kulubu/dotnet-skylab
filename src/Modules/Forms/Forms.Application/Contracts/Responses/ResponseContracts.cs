@@ -19,8 +19,11 @@ public record ResponseContract(
     Guid? LinkedResponseId,
     DateTime SubmittedAt,
     DateTime? ReviewedAt,
-    DateTime? ArchivedAt
+    DateTime? ArchivedAt,
+    UserContract? SharedBy = null
 );
+
+public record ResponseMetaContract(string FormTitle, UserContract? SharedBy);
 
 public record ResponseSubmitResult(
     Guid ResponseId,

@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using Skylab.Shared.Application.Caching;
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Application.Contracts.Auth;
 using Skylab.Shared.Application.Services;
@@ -6,6 +8,7 @@ using Skylab.Exports.Application.Contracts;
 using Skylab.Exports.Application.Services;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts;
+using Skylab.Forms.Application.Contracts.ComponentGroup;
 using Skylab.Forms.Application.Contracts.Responses;
 using Skylab.Forms.Domain.Entities;
 using Skylab.Forms.Domain.Enums;
@@ -15,12 +18,17 @@ namespace Skylab.Forms.Application.Services;
 
 public class FormResponseService : IFormResponseService
 {
+    private static readonly TimeSpan ShareTokenLifetime = TimeSpan.FromHours(1);
+    private const string TokenKeyPrefix = "response:share:token:";
+    private const string ResponseKeyPrefix = "response:share:response:";
+
     private readonly IFormRepository _forms;
     private readonly IFormResponseRepository _responses;
     private readonly IFormsUnitOfWork _uow;
     private readonly IExternalUserService _userService;
     private readonly IExcelService _excelService;
     private readonly IFormDraftService _draftService;
+    private readonly ICacheService _cache;
 
     public FormResponseService(
         IFormRepository forms,
@@ -28,7 +36,8 @@ public class FormResponseService : IFormResponseService
         IFormsUnitOfWork uow,
         IExternalUserService userService,
         IExcelService excelService,
-        IFormDraftService draftService)
+        IFormDraftService draftService,
+        ICacheService cache)
     {
         _forms = forms;
         _responses = responses;
@@ -36,7 +45,10 @@ public class FormResponseService : IFormResponseService
         _userService = userService;
         _excelService = excelService;
         _draftService = draftService;
+        _cache = cache;
     }
+
+    private record ShareCacheEntry(Guid ResponseId, Guid? LinkedResponseId, Guid SharedByUserId);
 
     public async Task<ServiceResult<ResponseSubmitResult>> SubmitResponseAsync(ResponseSubmitRequest contract, Guid? userId, CancellationToken cancellationToken = default)
     {
@@ -159,17 +171,25 @@ public class FormResponseService : IFormResponseService
         return new ServiceResult<FormResponsesListResult>(ServiceStatus.Success, Data: finalResult);
     }
 
-    public async Task<ServiceResult<ResponseContract>> GetResponseByIdAsync(Guid responseId, Guid userId, CancellationToken cancellationToken = default)
+    public async Task<ServiceResult<ResponseContract>> GetResponseByIdAsync(Guid responseId, Guid userId, string? token, CancellationToken cancellationToken = default)
     {
         var response = await _responses.GetByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
 
         if (response == null)
             return new ServiceResult<ResponseContract>(ServiceStatus.NotFound, Message: "Yanıt bulunamadı.");
 
-        var isAuthorized = response.Form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
+        var isCollaborator = response.Form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
 
-        if (!isAuthorized)
-            return new ServiceResult<ResponseContract>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı görüntüleme yetkiniz yok.");
+        ShareCacheEntry? shareEntry = null;
+        if (!isCollaborator)
+        {
+            if (string.IsNullOrEmpty(token))
+                return new ServiceResult<ResponseContract>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı görüntüleme yetkiniz yok.");
+
+            shareEntry = await _cache.GetAsync<ShareCacheEntry>(TokenKeyPrefix + token, ct: cancellationToken);
+            if (shareEntry == null || (shareEntry.ResponseId != responseId && shareEntry.LinkedResponseId != responseId))
+                return new ServiceResult<ResponseContract>(ServiceStatus.NotAuthorized, Message: "Paylaşım bağlantısı geçersiz veya süresi dolmuş.");
+        }
 
         FormRelationshipStatus relationshipStatus = FormRelationshipStatus.None;
         Guid? targetLinkedFormId = null;
@@ -202,16 +222,18 @@ public class FormResponseService : IFormResponseService
         if (response.UserId.HasValue) userIds.Add(response.UserId.Value);
         if (response.ReviewedBy.HasValue) userIds.Add(response.ReviewedBy.Value);
         if (response.ArchivedBy.HasValue) userIds.Add(response.ArchivedBy.Value);
+        if (shareEntry != null) userIds.Add(shareEntry.SharedByUserId);
 
         var users = await _userService.GetUsersAsync(userIds, cancellationToken);
 
         var responderUser = response.UserId.HasValue ? users.FirstOrDefault(u => u.Id == response.UserId) : null;
         var reviewerUser = response.ReviewedBy.HasValue ? users.FirstOrDefault(u => u.Id == response.ReviewedBy) : null;
         var archiverUser = response.ArchivedBy.HasValue ? users.FirstOrDefault(u => u.Id == response.ArchivedBy) : null;
+        var sharedByUser = shareEntry != null ? users.FirstOrDefault(u => u.Id == shareEntry.SharedByUserId) : null;
 
         return new ServiceResult<ResponseContract>(
             ServiceStatus.Success,
-            Data: MapToDetailContract(response, relationshipStatus, linkedResponseId, responderUser, reviewerUser, archiverUser)
+            Data: MapToDetailContract(response, relationshipStatus, linkedResponseId, responderUser, reviewerUser, archiverUser, sharedByUser)
         );
     }
 
@@ -358,7 +380,7 @@ public class FormResponseService : IFormResponseService
         };
     }
 
-    private static ResponseContract MapToDetailContract(FormResponse response, FormRelationshipStatus relationshipStatus, Guid? linkedResponseId, UserContract? responderUser, UserContract? reviewerUser, UserContract? archiverUser)
+    private static ResponseContract MapToDetailContract(FormResponse response, FormRelationshipStatus relationshipStatus, Guid? linkedResponseId, UserContract? responderUser, UserContract? reviewerUser, UserContract? archiverUser, UserContract? sharedByUser = null)
     {
         return new ResponseContract(
             response.Id,
@@ -375,7 +397,100 @@ public class FormResponseService : IFormResponseService
             linkedResponseId,
             response.SubmittedAt,
             response.ReviewedAt,
-            response.ArchivedAt
+            response.ArchivedAt,
+            sharedByUser
         );
+    }
+
+    public async Task<ServiceResult<ShareTokenContract>> CreateOrRefreshShareTokenAsync(Guid responseId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var response = await _responses.GetByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
+
+        if (response == null)
+            return new ServiceResult<ShareTokenContract>(ServiceStatus.NotFound, Message: "Yanıt bulunamadı.");
+
+        var isCollaborator = response.Form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
+        if (!isCollaborator)
+            return new ServiceResult<ShareTokenContract>(ServiceStatus.NotAuthorized, Message: "Bu yanıtı paylaşma yetkiniz yok.");
+
+        var linkedResponseId = await ResolveLinkedResponseIdAsync(response, cancellationToken);
+
+        var existingToken = await _cache.GetAsync<string>(ResponseKeyPrefix + responseId, ct: cancellationToken);
+        var token = existingToken ?? GenerateToken();
+
+        var entry = new ShareCacheEntry(responseId, linkedResponseId, userId);
+        var expiresAt = DateTime.UtcNow.Add(ShareTokenLifetime);
+
+        await _cache.SetAsync(TokenKeyPrefix + token, entry, ShareTokenLifetime, cancellationToken);
+        await _cache.SetAsync(ResponseKeyPrefix + responseId, token, ShareTokenLifetime, cancellationToken);
+        if (linkedResponseId.HasValue)
+            await _cache.SetAsync(ResponseKeyPrefix + linkedResponseId.Value, token, ShareTokenLifetime, cancellationToken);
+
+        return new ServiceResult<ShareTokenContract>(ServiceStatus.Success, Data: new ShareTokenContract(token, expiresAt));
+    }
+
+    public async Task<ServiceResult<bool>> RevokeShareTokenAsync(Guid responseId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        var response = await _responses.GetByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
+
+        if (response == null)
+            return new ServiceResult<bool>(ServiceStatus.NotFound, Message: "Yanıt bulunamadı.");
+
+        var isCollaborator = response.Form.Collaborators.Any(c => c.UserId == userId && c.Role != CollaboratorRole.None);
+        if (!isCollaborator)
+            return new ServiceResult<bool>(ServiceStatus.NotAuthorized, Message: "Bu yanıtın paylaşımını iptal etme yetkiniz yok.");
+
+        var token = await _cache.GetAsync<string>(ResponseKeyPrefix + responseId, ct: cancellationToken);
+        if (string.IsNullOrEmpty(token))
+            return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Aktif paylaşım yok.");
+
+        var entry = await _cache.GetAsync<ShareCacheEntry>(TokenKeyPrefix + token, ct: cancellationToken);
+
+        await _cache.RemoveAsync(TokenKeyPrefix + token, cancellationToken);
+        await _cache.RemoveAsync(ResponseKeyPrefix + (entry?.ResponseId ?? responseId), cancellationToken);
+        if (entry?.LinkedResponseId is Guid linkedId)
+            await _cache.RemoveAsync(ResponseKeyPrefix + linkedId, cancellationToken);
+
+        return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Paylaşım iptal edildi.");
+    }
+
+    public async Task<ServiceResult<ResponseMetaContract>> GetResponseMetaAsync(Guid responseId, string token, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(token))
+            return new ServiceResult<ResponseMetaContract>(ServiceStatus.NotFound);
+
+        var entry = await _cache.GetAsync<ShareCacheEntry>(TokenKeyPrefix + token, ct: cancellationToken);
+        if (entry == null || (entry.ResponseId != responseId && entry.LinkedResponseId != responseId))
+            return new ServiceResult<ResponseMetaContract>(ServiceStatus.NotFound);
+
+        var response = await _responses.GetByIdWithFormAndCollaboratorsAsync(responseId, cancellationToken);
+        if (response == null)
+            return new ServiceResult<ResponseMetaContract>(ServiceStatus.NotFound);
+
+        var sharedBy = await _userService.GetUserAsync(entry.SharedByUserId, cancellationToken);
+
+        return new ServiceResult<ResponseMetaContract>(
+            ServiceStatus.Success,
+            Data: new ResponseMetaContract(response.Form.Title, sharedBy)
+        );
+    }
+
+    private async Task<Guid?> ResolveLinkedResponseIdAsync(FormResponse response, CancellationToken cancellationToken)
+    {
+        if (!response.UserId.HasValue) return null;
+
+        if (response.Form.LinkedFormId.HasValue)
+            return await _responses.GetFirstChildResponseIdAsync(response.Form.LinkedFormId.Value, response.UserId.Value, response.SubmittedAt, cancellationToken);
+
+        var parentForm = await _forms.GetParentOfAsync(response.FormId, cancellationToken);
+        if (parentForm == null) return null;
+
+        return await _responses.GetLatestParentResponseIdAsync(parentForm.Id, response.UserId.Value, response.SubmittedAt, cancellationToken);
+    }
+
+    private static string GenerateToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
     }
 }

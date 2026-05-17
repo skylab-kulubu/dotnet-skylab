@@ -67,11 +67,15 @@ public static class FormEndpoints
             return result.Status == ServiceStatus.Success ? Results.NoContent() : result.ToApiResult();
         });
 
-        var componentGroups = routes.MapGroup("api/component-groups").WithTags("ComponentGroups");
-
-        componentGroups.MapGet("/{id:guid}/meta", async (Guid id, [FromQuery] string token, IComponentGroupService service, CancellationToken ct) =>
+        group.MapGet("/component-groups/{id:guid}/meta", async (Guid id, [FromQuery] string token, IComponentGroupService service, CancellationToken ct) =>
         {
             var result = await service.GetGroupMetaAsync(id, token, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapGet("/responses/{id:guid}/meta", async (Guid id, [FromQuery] string token, IFormResponseService service, CancellationToken ct) =>
+        {
+            var result = await service.GetResponseMetaAsync(id, token, ct);
             return result.ToApiResult();
         });
     }
