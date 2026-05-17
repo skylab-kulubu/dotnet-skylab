@@ -22,10 +22,9 @@ public static class FormEndpoints
             return result.ToApiResult();
         });
 
-        group.MapGet("/{id:guid}/meta", async (Guid id, IFormService service, ICurrentUserService userService, CancellationToken ct) =>
+        group.MapGet("/{id:guid}/meta", async (Guid id, IFormService service, CancellationToken ct) =>
         {
-            var userId = await userService.GetUserIdAsync(ct);
-            var result = await service.GetFormMetaByIdAsync(id, userId, ct);
+            var result = await service.GetFormMetaByIdAsync(id, ct);
 
             return result.ToApiResult();
         });

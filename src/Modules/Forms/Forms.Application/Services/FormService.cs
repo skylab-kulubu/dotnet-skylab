@@ -332,53 +332,12 @@ public partial class FormService : IFormService
         );
     }
 
-    public async Task<ServiceResult<FormMetaContract>> GetFormMetaByIdAsync(Guid id, Guid? userId, CancellationToken cancellationToken = default)
+    public async Task<ServiceResult<FormMetaContract>> GetFormMetaByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var form = await _forms.GetByIdAsync(id, cancellationToken);
 
         if (form == null || form.Status == FormStatus.Deleted || form.Status == FormStatus.Closed)
             return new ServiceResult<FormMetaContract>(ServiceStatus.NotFound);
-
-        if (userId == null && (!form.AllowAnonymousResponses || form.LinkedFormId.HasValue))
-        {
-            return new ServiceResult<FormMetaContract>(
-                ServiceStatus.Unauthorized,
-                Message: "Bu formu görüntülemek için giriş yapmalısınız."
-            );
-        }
-
-        var parentForm = await _forms.GetParentOfAsync(id, cancellationToken);
-
-        if (parentForm != null)
-        {
-            if (userId == null)
-            {
-                return new ServiceResult<FormMetaContract>(
-                    ServiceStatus.Unauthorized,
-                    Message: "Bağlı form akışı için giriş yapmalısınız."
-                );
-            }
-
-            if (parentForm.RequiresManualReview)
-            {
-                var parentResponse = await _responses.GetLatestForUserAsync(parentForm.Id, userId.Value, cancellationToken);
-
-                if (parentResponse == null || parentResponse.Status != FormResponseStatus.Approved)
-                {
-                    return new ServiceResult<FormMetaContract>(
-                        ServiceStatus.RequiresParentApproval,
-                        Message: "Bu formu görüntülemek için önceki adımın onaylanması gerekmektedir."
-                    );
-                }
-            }
-            else
-            {
-                var parentResponse = await _responses.GetLatestForUserAsync(parentForm.Id, userId.Value, cancellationToken);
-
-                if (parentResponse == null)
-                    return await GetFormMetaByIdAsync(parentForm.Id, userId, cancellationToken);
-            }
-        }
 
         return new ServiceResult<FormMetaContract>(
             ServiceStatus.Success,
