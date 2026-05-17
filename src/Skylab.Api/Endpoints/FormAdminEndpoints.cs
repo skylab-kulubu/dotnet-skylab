@@ -207,12 +207,34 @@ public static class FormAdminEndpoints
             return result.ToApiResult();
         });
 
-        group.MapGet("/component-groups/{id:guid}", async (Guid id, IComponentGroupService service, ICurrentUserService userService, CancellationToken ct) =>
+        group.MapGet("/component-groups/{id:guid}", async (Guid id, [FromQuery] string? token, IComponentGroupService service, ICurrentUserService userService, CancellationToken ct) =>
         {
             var userId = await userService.GetUserIdAsync(ct);
             if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Grubu görmek için giriş yapmalısınız.");
 
-            var result = await service.GetGroupByIdAsync(id, userId.Value, ct);
+            var result = await service.GetGroupByIdAsync(id, userId.Value, token, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/component-groups/{id:guid}/share", async (Guid id, IComponentGroupService service, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Grup paylaşmak için giriş yapmalısınız.");
+
+            var result = await service.CreateOrRefreshShareTokenAsync(id, userId.Value, ct);
+            return result.ToApiResult();
+        });
+
+        group.MapPost("/component-groups/{id:guid}/clone", async (Guid id, [FromQuery] string token, IComponentGroupService service, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Grup eklemek için giriş yapmalısınız.");
+
+            var result = await service.CloneGroupAsync(id, userId.Value, token, ct);
+
+            if (result.Status == ServiceStatus.Success && result.Data != null)
+                return Results.Created($"/api/admin/component-groups/{result.Data.Id}", result);
+
             return result.ToApiResult();
         });
 

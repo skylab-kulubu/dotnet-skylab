@@ -66,5 +66,13 @@ public static class FormEndpoints
             var result = await draftService.DeleteResponseDraftAsync(formId, userId.Value, ct);
             return result.Status == ServiceStatus.Success ? Results.NoContent() : result.ToApiResult();
         });
+
+        var componentGroups = routes.MapGroup("api/component-groups").WithTags("ComponentGroups");
+
+        componentGroups.MapGet("/{id:guid}/meta", async (Guid id, [FromQuery] string token, IComponentGroupService service, CancellationToken ct) =>
+        {
+            var result = await service.GetGroupMetaAsync(id, token, ct);
+            return result.ToApiResult();
+        });
     }
 }

@@ -37,7 +37,7 @@ public sealed class ComponentGroupRepository : IComponentGroupRepository
         var groups = await query
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(g => new ComponentGroupContract(g.Id, g.Title, g.Description, g.Schema))
+            .Select(g => new ComponentGroupContract(g.Id, g.Title, g.Description, g.Schema, null))
             .ToListAsync(ct);
 
         return new PagedResult<ComponentGroupContract>(groups, totalCount, request.Page, request.PageSize);
