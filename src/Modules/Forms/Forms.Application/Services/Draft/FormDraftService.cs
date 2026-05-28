@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Skylab.Shared.Application.Caching;
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Contracts.Draft;
+using Skylab.Forms.Domain.Entities;
 
 namespace Skylab.Forms.Application.Services;
 
@@ -11,8 +13,8 @@ public class FormDraftService : IFormDraftService
     private readonly ICacheService _cache;
     private readonly IFormRepository _forms;
 
-    private static readonly TimeSpan ResponseDraftTtl = TimeSpan.FromHours(24);
-    private static readonly TimeSpan FormDraftTtl = TimeSpan.FromHours(48);
+    private static readonly TimeSpan ResponseDraftTtl = TimeSpan.FromHours(168);
+    private static readonly TimeSpan FormDraftTtl = TimeSpan.FromHours(168);
 
     public FormDraftService(ICacheService cache, IFormRepository forms)
     {
@@ -76,7 +78,26 @@ public class FormDraftService : IFormDraftService
         if (draftRequest == null)
             return new ServiceResult<FormDraftContract?>(ServiceStatus.NotFound, Message: "Form taslağı bulunamadı.");
 
+        var form = await _forms.GetByIdAsync(formId, ct);
+        if (form != null && IsDraftIdenticalToForm(draftRequest.Data, form))
+            return new ServiceResult<FormDraftContract?>(ServiceStatus.NotFound, Message: "Form taslağı bulunamadı.");
+
         return new ServiceResult<FormDraftContract?>(ServiceStatus.Success, Data: draftRequest.Data);
+    }
+
+    private static bool IsDraftIdenticalToForm(FormDraftContract draft, Form form)
+    {
+        if (draft.Title != form.Title) return false;
+        if (draft.Description != form.Description) return false;
+        if (draft.AllowAnonymousResponses != form.AllowAnonymousResponses) return false;
+        if (draft.AllowMultipleResponses != form.AllowMultipleResponses) return false;
+        if (draft.RequiresManualReview != form.RequiresManualReview) return false;
+        if (draft.Status != form.Status) return false;
+
+        var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        var draftSchema = JsonSerializer.Serialize(draft.Schema, opts);
+        var formSchema = JsonSerializer.Serialize(form.Schema, opts);
+        return draftSchema == formSchema;
     }
 
     public async Task<ServiceResult<bool>> DeleteFormDraftAsync(Guid formId, Guid userId, CancellationToken ct = default)
