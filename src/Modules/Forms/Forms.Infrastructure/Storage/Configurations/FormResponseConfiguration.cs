@@ -27,6 +27,9 @@ public class FormResponseConfiguration : IEntityTypeConfiguration<FormResponse>
         builder.Property(fr => fr.ArchivedBy).IsRequired(false);
         builder.Property(fr => fr.ArchivedAt).IsRequired(false);
 
+        builder.Property(fr => fr.PendingReminderSentAt).IsRequired(false);
+        builder.HasIndex(fr => new { fr.Status, fr.IsArchived, fr.PendingReminderSentAt });
+
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
         builder.Property(fr => fr.Data)

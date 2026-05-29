@@ -46,4 +46,14 @@ public class RedisCacheService : ICacheService
         return await _db.KeyExistsAsync(key);
     }
 
+    public async Task<bool> AcquireLockAsync(string key, TimeSpan ttl, CancellationToken ct)
+    {
+        return await _db.StringSetAsync(key, "1", ttl, When.NotExists);
+    }
+
+    public async Task ReleaseLockAsync(string key, CancellationToken ct)
+    {
+        await _db.KeyDeleteAsync(key);
+    }
+
 }

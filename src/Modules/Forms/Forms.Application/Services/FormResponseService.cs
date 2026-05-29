@@ -29,6 +29,7 @@ public class FormResponseService : IFormResponseService
     private readonly IExcelService _excelService;
     private readonly IFormDraftService _draftService;
     private readonly ICacheService _cache;
+    private readonly IFormMailNotifier _mailNotifier;
 
     public FormResponseService(
         IFormRepository forms,
@@ -37,7 +38,8 @@ public class FormResponseService : IFormResponseService
         IExternalUserService userService,
         IExcelService excelService,
         IFormDraftService draftService,
-        ICacheService cache)
+        ICacheService cache,
+        IFormMailNotifier mailNotifier)
     {
         _forms = forms;
         _responses = responses;
@@ -46,6 +48,7 @@ public class FormResponseService : IFormResponseService
         _excelService = excelService;
         _draftService = draftService;
         _cache = cache;
+        _mailNotifier = mailNotifier;
     }
 
     private record ShareCacheEntry(Guid ResponseId, Guid? LinkedResponseId, Guid SharedByUserId);
@@ -94,6 +97,8 @@ public class FormResponseService : IFormResponseService
         {
             await _draftService.DeleteResponseDraftAsync(form.Id, userId.Value, cancellationToken);
         }
+
+        await _mailNotifier.NotifyResponseCopyAsync(form, response, cancellationToken);
 
         bool isChild = parentForm != null;
         bool isLinkedFlow = form.LinkedFormId.HasValue || isChild;
@@ -258,6 +263,8 @@ public class FormResponseService : IFormResponseService
         response.ReviewedAt = DateTime.UtcNow;
 
         await _uow.SaveChangesAsync(cancellationToken);
+
+        await _mailNotifier.NotifyStatusChangedAsync(response.Form, response, cancellationToken);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt durumu başarıyla güncellendi.");
     }

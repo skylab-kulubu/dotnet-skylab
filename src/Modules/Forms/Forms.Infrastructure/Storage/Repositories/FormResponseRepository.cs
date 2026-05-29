@@ -104,6 +104,49 @@ public sealed class FormResponseRepository : IFormResponseRepository
             .OrderBy(r => r.SubmittedAt)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<OverduePendingFormProjection>> GetOverduePendingByFormAsync(DateTime cutoff, CancellationToken ct = default)
+    {
+        var formCounts = await _context.Responses.AsNoTracking()
+            .Where(r => r.Status == FormResponseStatus.Pending
+                && !r.IsArchived
+                && r.PendingReminderSentAt == null
+                && r.SubmittedAt <= cutoff)
+            .GroupBy(r => r.FormId)
+            .Select(g => new { FormId = g.Key, PendingCount = g.Count() })
+            .ToListAsync(ct);
+
+        if (formCounts.Count == 0) return [];
+
+        var formIds = formCounts.Select(x => x.FormId).ToList();
+
+        var forms = await _context.Forms.AsNoTracking()
+            .Where(f => formIds.Contains(f.Id))
+            .Select(f => new
+            {
+                f.Id,
+                f.Title,
+                ReviewerIds = f.Collaborators
+                    .Where(c => c.Role == CollaboratorRole.Owner || c.Role == CollaboratorRole.Editor)
+                    .Select(c => c.UserId)
+                    .ToList()
+            })
+            .ToListAsync(ct);
+
+        return formCounts
+            .Join(forms, c => c.FormId, f => f.Id, (c, f) =>
+                new OverduePendingFormProjection(f.Id, f.Title, c.PendingCount, f.ReviewerIds))
+            .ToList();
+    }
+
+    public Task MarkOverduePendingRemindedAsync(DateTime cutoff, DateTime remindedAt, CancellationToken ct = default) =>
+        _context.Responses
+            .IgnoreQueryFilters()
+            .Where(r => r.Status == FormResponseStatus.Pending
+                && !r.IsArchived
+                && r.PendingReminderSentAt == null
+                && r.SubmittedAt <= cutoff)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.PendingReminderSentAt, remindedAt), ct);
+
     public Task<Guid?> GetFirstChildResponseIdAsync(Guid childFormId, Guid userId, DateTime submittedAtOrAfter, CancellationToken ct = default) =>
         _context.Responses.AsNoTracking()
             .Where(r => r.FormId == childFormId && r.UserId == userId && r.SubmittedAt >= submittedAtOrAfter)

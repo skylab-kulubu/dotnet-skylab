@@ -2,6 +2,7 @@ using Skylab.Forms.Infrastructure.Storage;
 using Skylab.Forms.Infrastructure.Storage.Repositories;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Application.Services;
+using Skylab.Forms.Application.Mail;
 using Skylab.Feedbacks.Infrastructure.Storage;
 using Skylab.Feedbacks.Infrastructure.Storage.Repositories;
 using Skylab.Feedbacks.Application.Abstractions.Storage;
@@ -11,6 +12,7 @@ using Skylab.Shared.Application.Caching;
 using Skylab.Shared.Application.Services;
 using Skylab.Shared.Infrastructure.Auth;
 using Skylab.Shared.Infrastructure.Caching;
+using Skylab.Shared.Infrastructure.Mail;
 using Skylab.Api.Endpoints;
 using Microsoft.EntityFrameworkCore;
 using Steeltoe.Discovery.Eureka;
@@ -85,6 +87,23 @@ builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 
 builder.Services.AddScoped<ICurrentUserService, JwtCurrentUserService>();
 builder.Services.AddHttpClient<IExternalUserService, ExternalUserService>(client => { client.BaseAddress = new Uri("http://super-skylab"); }).AddServiceDiscovery();
+
+builder.Services.Configure<KeycloakOptions>(builder.Configuration.GetSection(KeycloakOptions.SectionName));
+builder.Services.AddHttpClient("keycloak");
+builder.Services.AddSingleton<IServiceTokenProvider, KeycloakServiceTokenProvider>();
+builder.Services.AddTransient<ServiceTokenHandler>();
+
+builder.Services.AddHttpClient<ISkyMailService, SkyMailClient>(client => { client.BaseAddress = new Uri("http://skymail"); })
+    .AddServiceDiscovery()
+    .AddHttpMessageHandler<ServiceTokenHandler>();
+
+builder.Services.AddSingleton<ChannelMailDispatcher>();
+builder.Services.AddSingleton<IMailDispatcher>(sp => sp.GetRequiredService<ChannelMailDispatcher>());
+builder.Services.AddHostedService<MailWorker>();
+
+builder.Services.Configure<FormMailOptions>(builder.Configuration.GetSection(FormMailOptions.SectionName));
+builder.Services.AddScoped<IFormMailNotifier, FormMailNotifier>();
+builder.Services.AddHostedService<PendingResponseReminderWorker>();
 
 
 var app = builder.Build();

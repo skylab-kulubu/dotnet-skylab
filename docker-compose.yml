@@ -43,6 +43,14 @@ services:
       Eureka__Client__ServiceUrl: "http://eureka-server:8761/eureka/"
       Eureka__Client__ValidateCertificates: "false"
       Eureka__Instance__PreferIpAddress: "true"
+
+      Keycloak__TokenUrl: "${KEYCLOAK_TOKEN_URL}"
+      Keycloak__ClientId: "${KEYCLOAK_CLIENT_ID}"
+      Keycloak__ClientSecret: "${KEYCLOAK_CLIENT_SECRET}"
+
+      FormMail__FormCopyTemplateId: "${FORMMAIL_FORM_COPY_TEMPLATE_ID}"
+      FormMail__StatusChangedTemplateId: "${FORMMAIL_STATUS_CHANGED_TEMPLATE_ID}"
+      FormMail__PendingReminderTemplateId: "${FORMMAIL_PENDING_REMINDER_TEMPLATE_ID}"
     #ports:
     #  - "5000:8080"   # Host: 5000, Container: 8080
     restart: unless-stopped

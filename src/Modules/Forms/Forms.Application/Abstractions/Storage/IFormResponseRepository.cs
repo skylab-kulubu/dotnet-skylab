@@ -1,5 +1,6 @@
 using Skylab.Forms.Application.Contracts.Responses;
 using Skylab.Forms.Domain.Entities;
+using Skylab.Forms.Domain.Enums;
 
 namespace Skylab.Forms.Application.Abstractions.Storage;
 
@@ -15,6 +16,9 @@ public interface IFormResponseRepository
     Task<PagedResponsesProjection> GetPagedAsync(Guid formId, GetResponsesRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<FormResponse>> GetNonArchivedByFormAsync(Guid formId, CancellationToken ct = default);
 
+    Task<IReadOnlyList<OverduePendingFormProjection>> GetOverduePendingByFormAsync(DateTime cutoff, CancellationToken ct = default);
+    Task MarkOverduePendingRemindedAsync(DateTime cutoff, DateTime remindedAt, CancellationToken ct = default);
+
     Task<Guid?> GetFirstChildResponseIdAsync(Guid childFormId, Guid userId, DateTime submittedAtOrAfter, CancellationToken ct = default);
     Task<Guid?> GetLatestParentResponseIdAsync(Guid parentFormId, Guid userId, DateTime submittedAtOrBefore, CancellationToken ct = default);
 
@@ -23,10 +27,12 @@ public interface IFormResponseRepository
 
 public sealed record FormResponseCounts(int Total, int Waiting, double? AverageTimeSpentSeconds);
 
+public sealed record OverduePendingFormProjection(Guid FormId, string FormTitle, int PendingCount, IReadOnlyList<Guid> ReviewerIds);
+
 public sealed record ResponseSummaryProjection(
     Guid Id,
     Guid? UserId,
-    Skylab.Forms.Domain.Enums.FormResponseStatus Status,
+    FormResponseStatus Status,
     bool IsArchived,
     Guid? ReviewedBy,
     Guid? ArchivedBy,
