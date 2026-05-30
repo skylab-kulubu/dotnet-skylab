@@ -93,9 +93,7 @@ builder.Services.AddHttpClient("keycloak");
 builder.Services.AddSingleton<IServiceTokenProvider, KeycloakServiceTokenProvider>();
 builder.Services.AddTransient<ServiceTokenHandler>();
 
-builder.Services.AddHttpClient<ISkyMailService, SkyMailClient>(client => { client.BaseAddress = new Uri("http://skymail"); })
-    .AddServiceDiscovery()
-    .AddHttpMessageHandler<ServiceTokenHandler>();
+builder.Services.AddHttpClient<ISkyMailService, SkyMailClient>(client => { client.BaseAddress = new Uri("http://skymail/v1/"); }).AddServiceDiscovery().AddHttpMessageHandler<ServiceTokenHandler>();
 
 builder.Services.AddSingleton<ChannelMailDispatcher>();
 builder.Services.AddSingleton<IMailDispatcher>(sp => sp.GetRequiredService<ChannelMailDispatcher>());

@@ -23,7 +23,7 @@ public class SkyMailClient : ISkyMailService
     {
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync("/mail_tasks/single", request, JsonOptions, ct);
+            using var response = await _httpClient.PostAsJsonAsync("mail_tasks/single", request, JsonOptions, ct);
 
             if (!response.IsSuccessStatusCode)
             {
