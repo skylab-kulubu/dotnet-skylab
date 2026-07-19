@@ -100,9 +100,7 @@ public sealed class FormRepository : IFormRepository
                 : query.Where(f => f.LinkedFormId == null);
         }
 
-        query = request.SortDirection?.ToLower() == "ascending"
-            ? query.OrderBy(f => f.UpdatedAt ?? f.CreatedAt)
-            : query.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt);
+        query = ApplyUserFormsSorting(query, request.SortBy, request.SortDirection, userId);
 
         var totalCount = await query.CountAsync(ct);
 
@@ -124,6 +122,32 @@ public sealed class FormRepository : IFormRepository
             .ToListAsync(ct);
 
         return new PagedResult<FormSummaryContract>(forms, totalCount, request.Page, request.PageSize);
+    }
+
+    private static IQueryable<Form> ApplyUserFormsSorting(IQueryable<Form> query, string? sortBy, string? sortDirection, Guid userId)
+    {
+        var ascending = string.Equals(sortDirection, "ascending", StringComparison.OrdinalIgnoreCase);
+
+        IOrderedQueryable<Form> ordered = sortBy?.Trim().ToLowerInvariant() switch
+        {
+            "status" => ascending
+                ? query.OrderBy(f => f.Status)
+                : query.OrderByDescending(f => f.Status),
+            "responsecount" => ascending
+                ? query.OrderBy(f => f.Responses.Count())
+                : query.OrderByDescending(f => f.Responses.Count()),
+            "userrole" => ascending
+                ? query.OrderBy(f => f.Collaborators.Where(c => c.UserId == userId).Select(c => c.Role).FirstOrDefault())
+                : query.OrderByDescending(f => f.Collaborators.Where(c => c.UserId == userId).Select(c => c.Role).FirstOrDefault()),
+            "linkedform" => ascending
+                ? query.OrderBy(f => f.LinkedFormId != null)
+                : query.OrderByDescending(f => f.LinkedFormId != null),
+            _ => ascending
+                ? query.OrderBy(f => f.UpdatedAt ?? f.CreatedAt)
+                : query.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt),
+        };
+
+        return ordered.ThenBy(f => f.Id);
     }
 
     public async Task<PagedResult<FormAllSummaryProjection>> GetAllFormsAsync(GetAllFormsRequest request, CancellationToken ct = default)

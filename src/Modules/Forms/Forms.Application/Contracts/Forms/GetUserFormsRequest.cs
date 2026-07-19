@@ -9,7 +9,8 @@ public record GetUserFormsRequest(
     CollaboratorRole? Role = null,      
     bool? AllowAnonymous = null,        
     bool? AllowMultiple = null,
-    bool? RequiresManualReview = null,         
-    bool? HasLinkedForm = null,     
+    bool? RequiresManualReview = null,
+    bool? HasLinkedForm = null,
+    string SortBy = "updatedAt",
     string SortDirection = "descending"
 );
