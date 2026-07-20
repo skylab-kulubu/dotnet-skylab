@@ -1,8 +1,11 @@
+using Skylab.Forms.Domain.Models;
+
 namespace Skylab.Forms.Application.Abstractions.Storage;
 
 public interface IFormMetricsRepository
 {
     Task<FormBasicStats?> GetFormBasicStatsAsync(Guid formId, CancellationToken ct = default);
+    Task<IReadOnlyList<List<FormResponseSchemaItem>>> GetNonArchivedResponseDataAsync(Guid formId, CancellationToken ct = default);
     Task<IReadOnlyList<DailyResponseCount>> GetDailyResponseCountsAsync(Guid formId, DateTime sinceDate, CancellationToken ct = default);
     Task<IReadOnlyList<HourlyResponseCount>> GetHourlyResponseCountsAsync(Guid formId, DateTime sinceTime, CancellationToken ct = default);
 

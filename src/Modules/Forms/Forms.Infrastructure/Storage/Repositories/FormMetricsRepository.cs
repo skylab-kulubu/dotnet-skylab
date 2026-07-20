@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Skylab.Forms.Application.Abstractions.Storage;
 using Skylab.Forms.Domain.Enums;
+using Skylab.Forms.Domain.Models;
 
 namespace Skylab.Forms.Infrastructure.Storage.Repositories;
 
@@ -27,6 +28,14 @@ public sealed class FormMetricsRepository : IFormMetricsRepository
                 g.Count(r => r.UserId == null)
             ))
             .FirstOrDefaultAsync(ct);
+
+    // Analytics aggregates the jsonb Data client-side (see AnswerAnalyticsBuilder),
+    // so pull the raw answer lists for every non-archived response of the form.
+    public async Task<IReadOnlyList<List<FormResponseSchemaItem>>> GetNonArchivedResponseDataAsync(Guid formId, CancellationToken ct = default) =>
+        await _context.Responses.AsNoTracking()
+            .Where(r => r.FormId == formId && !r.IsArchived)
+            .Select(r => r.Data)
+            .ToListAsync(ct);
 
     public async Task<IReadOnlyList<DailyResponseCount>> GetDailyResponseCountsAsync(Guid formId, DateTime sinceDate, CancellationToken ct = default) =>
         await _context.Responses.AsNoTracking()

@@ -1,8 +1,10 @@
+using Skylab.Shared.Application.Caching;
 using Skylab.Shared.Application.Contracts;
 using Skylab.Shared.Application.Contracts.Auth;
 using Skylab.Shared.Application.Services;
 using Skylab.Shared.Domain.Enums;
 using Skylab.Forms.Application.Abstractions.Storage;
+using Skylab.Forms.Application.Caching;
 using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.Collaborators;
 using Skylab.Forms.Application.Contracts.Forms;
@@ -21,6 +23,7 @@ public partial class FormService : IFormService
     private readonly IExternalUserService _userService;
     private readonly IFormDraftService _draftService;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ICacheService _cache;
 
     public FormService(
         IFormRepository forms,
@@ -28,7 +31,8 @@ public partial class FormService : IFormService
         IFormsUnitOfWork uow,
         IExternalUserService userService,
         IFormDraftService draftService,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ICacheService cache)
     {
         _forms = forms;
         _responses = responses;
@@ -36,6 +40,7 @@ public partial class FormService : IFormService
         _userService = userService;
         _draftService = draftService;
         _currentUserService = currentUserService;
+        _cache = cache;
     }
 
     public async Task<ServiceResult<FormContract>> CreateFormAsync(FormUpsertRequest contract, Guid userId, CancellationToken cancellationToken = default)
@@ -165,6 +170,9 @@ public partial class FormService : IFormService
         {
             await _draftService.ClearResponseDraftsAsync(formId, cancellationToken);
         }
+
+        if (schemaChanged)
+            await _cache.RemoveAsync(FormCacheKeys.Analytics(formId), cancellationToken);
 
         var collaboratorIds = existingForm.Collaborators.Select(c => c.UserId).ToList();
         var users = await _userService.GetUsersAsync(collaboratorIds, cancellationToken);

@@ -7,6 +7,7 @@ using Skylab.Shared.Domain.Enums;
 using Skylab.Exports.Application.Contracts;
 using Skylab.Exports.Application.Services;
 using Skylab.Forms.Application.Abstractions.Storage;
+using Skylab.Forms.Application.Caching;
 using Skylab.Forms.Application.Contracts;
 using Skylab.Forms.Application.Contracts.ComponentGroup;
 using Skylab.Forms.Application.Contracts.Responses;
@@ -92,6 +93,8 @@ public class FormResponseService : IFormResponseService
 
         _responses.Add(response);
         await _uow.SaveChangesAsync(cancellationToken);
+
+        await _cache.RemoveAsync(FormCacheKeys.Analytics(form.Id), cancellationToken);
 
         if (userId.HasValue)
         {
@@ -297,6 +300,9 @@ public class FormResponseService : IFormResponseService
         response.ArchivedAt = DateTime.UtcNow;
 
         await _uow.SaveChangesAsync(cancellationToken);
+
+        await _cache.RemoveAsync(FormCacheKeys.Analytics(response.FormId), cancellationToken);
+
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt başarıyla arşivlendi.");
     }
 

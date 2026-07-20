@@ -150,6 +150,15 @@ public static class FormAdminEndpoints
             return result.ToApiResult();
         });
 
+        group.MapGet("/{id:guid}/analytics", async (Guid id, IFormMetricService service, ICurrentUserService userService, CancellationToken ct) =>
+        {
+            var userId = await userService.GetUserIdAsync(ct);
+            if (userId == null) return ServiceStatus.Unauthorized.ToApiResult("Analitiği görmek için giriş yapmalısınız.");
+
+            var result = await service.GetAnswerAnalyticsAsync(id, userId.Value, ct);
+            return result.ToApiResult();
+        });
+
         group.MapGet("/responses/{id:guid}", async (Guid id, [FromQuery] string? token, IFormResponseService service, ICurrentUserService userService, CancellationToken ct) =>
         {
             var userId = await userService.GetUserIdAsync(ct);
