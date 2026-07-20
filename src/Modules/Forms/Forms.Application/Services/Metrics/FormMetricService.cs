@@ -10,7 +10,10 @@ namespace Skylab.Forms.Application.Services;
 
 public class FormMetricService : IFormMetricService
 {
-    private static readonly TimeSpan AnalyticsCacheTtl = TimeSpan.FromMinutes(15);
+    // Short safety TTL only: explicit invalidation (submit/archive/schema change) handles the
+    // common case. Keeping this small also bounds staleness from a rare read/invalidate race
+    // (a request that reads the DB just before a concurrent write repopulates the old snapshot).
+    private static readonly TimeSpan AnalyticsCacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly IFormRepository _forms;
     private readonly IFormMetricsRepository _metrics;
@@ -27,25 +30,26 @@ public class FormMetricService : IFormMetricService
 
     public async Task<ServiceResult<FormAnswerAnalyticsContract>> GetAnswerAnalyticsAsync(Guid formId, Guid userId, CancellationToken cancellationToken = default)
     {
+        if (!await _forms.ExistsAsync(formId, cancellationToken))
+            return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
+
+        if (!await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken)
+            && !await _forms.IsUserCollaboratorAsync(formId, userId, cancellationToken))
+            return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun analitiğini görüntüleme yetkiniz yok.");
+
+        var cacheKey = FormCacheKeys.Analytics(formId);
+        var cached = await _cache.TryGetAsync<FormAnswerAnalyticsContract>(cacheKey, cancellationToken);
+        if (cached != null)
+            return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.Success, Data: cached);
+
         var form = await _forms.GetByIdAsync(formId, cancellationToken);
         if (form == null)
             return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.NotFound, Message: "Form bulunamadı.");
 
-        var isAuthorized = await _forms.IsUserCollaboratorAsync(formId, userId, cancellationToken);
-        if (!isAuthorized && !await _currentUserService.HasRoleAsync("skyforms:*", "skyforms", cancellationToken))
-            return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.NotAuthorized, Message: "Bu formun analitiğini görüntüleme yetkiniz yok.");
-
-        var cacheKey = FormCacheKeys.Analytics(formId);
-        var cached = await _cache.GetAsync<FormAnswerAnalyticsContract>(cacheKey, ct: cancellationToken);
-        if (cached != null)
-            return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.Success, Data: cached);
-
         var responses = await _metrics.GetNonArchivedResponseDataAsync(formId, cancellationToken);
         var analytics = AnswerAnalyticsBuilder.Build(form, responses);
 
-        // Safety TTL: write paths also invalidate explicitly, this just bounds staleness
-        // if an invalidation point is ever missed.
-        await _cache.SetAsync(cacheKey, analytics, AnalyticsCacheTtl, cancellationToken);
+        await _cache.TrySetAsync(cacheKey, analytics, AnalyticsCacheTtl, cancellationToken);
 
         return new ServiceResult<FormAnswerAnalyticsContract>(ServiceStatus.Success, Data: analytics);
     }

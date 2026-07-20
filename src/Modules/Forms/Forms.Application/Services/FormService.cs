@@ -172,7 +172,7 @@ public partial class FormService : IFormService
         }
 
         if (schemaChanged)
-            await _cache.RemoveAsync(FormCacheKeys.Analytics(formId), cancellationToken);
+            await _cache.TryRemoveAsync(FormCacheKeys.Analytics(formId), cancellationToken);
 
         var collaboratorIds = existingForm.Collaborators.Select(c => c.UserId).ToList();
         var users = await _userService.GetUsersAsync(collaboratorIds, cancellationToken);

@@ -94,7 +94,7 @@ public class FormResponseService : IFormResponseService
         _responses.Add(response);
         await _uow.SaveChangesAsync(cancellationToken);
 
-        await _cache.RemoveAsync(FormCacheKeys.Analytics(form.Id), cancellationToken);
+        await _cache.TryRemoveAsync(FormCacheKeys.Analytics(form.Id), cancellationToken);
 
         if (userId.HasValue)
         {
@@ -301,7 +301,7 @@ public class FormResponseService : IFormResponseService
 
         await _uow.SaveChangesAsync(cancellationToken);
 
-        await _cache.RemoveAsync(FormCacheKeys.Analytics(response.FormId), cancellationToken);
+        await _cache.TryRemoveAsync(FormCacheKeys.Analytics(response.FormId), cancellationToken);
 
         return new ServiceResult<bool>(ServiceStatus.Success, Data: true, Message: "Yanıt başarıyla arşivlendi.");
     }

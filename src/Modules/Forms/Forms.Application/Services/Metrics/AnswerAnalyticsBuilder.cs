@@ -31,8 +31,12 @@ public static class AnswerAnalyticsBuilder
 
         foreach (var response in responses)
         {
+            var seen = new HashSet<string>();
             foreach (var item in response)
             {
+                if (!seen.Add(item.Id))
+                    continue;
+
                 if (!answersById.TryGetValue(item.Id, out var list))
                     answersById[item.Id] = list = new List<string?>();
                 list.Add(item.Answer);
@@ -127,7 +131,8 @@ public static class AnswerAnalyticsBuilder
     private static NumericSummaryContract? BuildNumericSummary(List<string> answered)
     {
         var numbers = answered
-            .Select(a => double.TryParse(a, NumberStyles.Any, CultureInfo.InvariantCulture, out var n) ? n : (double?)null)
+            // Float (not Any): reject group separators so a comma-decimal like "1,5" is not misread as 1500/15.
+            .Select(a => double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) ? n : (double?)null)
             .Where(n => n.HasValue)
             .Select(n => n!.Value)
             .OrderBy(n => n)
@@ -157,7 +162,9 @@ public static class AnswerAnalyticsBuilder
         var buckets = dates
             .GroupBy(d => new DateOnly(d.Year, d.Month, 1))
             .OrderBy(g => g.Key)
-            .Select(g => new AnswerBucketContract(g.Key.ToString("yyyy-MM"), g.Count(), Percentage(g.Count(), dates.Count)))
+            // Denominator is answeredCount (not parsed count) so buckets stay consistent with
+            // AnsweredCount; unparseable values show up as the sub-100% remainder.
+            .Select(g => new AnswerBucketContract(g.Key.ToString("yyyy-MM"), g.Count(), Percentage(g.Count(), answered.Count)))
             .ToList();
 
         return (buckets, new DateRangeContract(dates.Min(), dates.Max()));
@@ -174,7 +181,7 @@ public static class AnswerAnalyticsBuilder
         return hours
             .GroupBy(h => h)
             .OrderBy(g => g.Key)
-            .Select(g => new AnswerBucketContract($"{g.Key:D2}:00", g.Count(), Percentage(g.Count(), hours.Count)))
+            .Select(g => new AnswerBucketContract($"{g.Key:D2}:00", g.Count(), Percentage(g.Count(), answered.Count)))
             .ToList();
     }
 
