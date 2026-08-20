@@ -31,14 +31,12 @@ packages/
 .nuget/packages/
 .nuget/NuGet.Config
 
-# EF Core migrations
-[Mm]igrations/
-
 # Secrets & local configs
 appsettings.Development.json
 appsettings.Local.json
 .env
 .env.*
+!.env.example
 *.key
 *.pfx
 

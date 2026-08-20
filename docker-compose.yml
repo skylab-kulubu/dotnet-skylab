@@ -1,45 +1,51 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16
-    container_name: postgres
+    container_name: forms-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: skylab
-      POSTGRES_DB: dotnet_db
-    #ports:
-    #  - "5432:5432"
+      POSTGRES_USER: "${POSTGRES_USER:-forms}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      POSTGRES_DB: "${POSTGRES_DB:-forms_db}"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forms} -d ${POSTGRES_DB:-forms_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - skynet
 
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: forms-redis
     restart: unless-stopped
-   # ports:
-   #   - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - skynet
 
   api:
-    container_name: dotnet-api
+    container_name: forms-api
     build:
       context: ./src
       dockerfile: Dockerfile
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      CONNECTION_STRING: "Host=postgres;Port=5432;Database=dotnet_db;Username=admin;Password=skylab"
+      CONNECTION_STRING: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-forms_db};Username=${POSTGRES_USER:-forms};Password=${POSTGRES_PASSWORD}"
       ALLOWED_ORIGIN: "http://localhost:5000"
       Redis__ConnectionString: "redis:6379"
       ASPNETCORE_URLS: "http://0.0.0.0:8080"
 
-      Spring__Application__Name: "DotnetApi"
+      Spring__Application__Name: "FormsApi"
       Eureka__Client__ServiceUrl: "http://eureka-server:8761/eureka/"
       Eureka__Client__ValidateCertificates: "false"
       Eureka__Instance__PreferIpAddress: "true"
@@ -51,8 +57,6 @@ services:
       FormMail__FormCopyTemplateId: "${FORMMAIL_FORM_COPY_TEMPLATE_ID}"
       FormMail__StatusChangedTemplateId: "${FORMMAIL_STATUS_CHANGED_TEMPLATE_ID}"
       FormMail__PendingReminderTemplateId: "${FORMMAIL_PENDING_REMINDER_TEMPLATE_ID}"
-    #ports:
-    #  - "5000:8080"   # Host: 5000, Container: 8080
     restart: unless-stopped
     networks:
       - skynet
