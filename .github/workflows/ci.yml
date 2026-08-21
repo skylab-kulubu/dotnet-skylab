@@ -1,4 +1,4 @@
-name: SKY LAB - DOTNET Backend CI Pipeline (GHCR)
+name: SKY LAB - FORMS Backend CI Pipeline (GHCR)
 
 on:
   push:
@@ -28,6 +28,6 @@ jobs:
           context: ./src
           push: true
           tags: |
-            ghcr.io/skylab-kulubu/dotnet-backend:latest
-            ghcr.io/skylab-kulubu/dotnet-backend:${{ github.sha }}
-            ghcr.io/skylab-kulubu/dotnet-backend:${{ github.ref_name }}
+            ghcr.io/skylab-kulubu/forms-backend:latest
+            ghcr.io/skylab-kulubu/forms-backend:${{ github.sha }}
+            ghcr.io/skylab-kulubu/forms-backend:${{ github.ref_name }}
